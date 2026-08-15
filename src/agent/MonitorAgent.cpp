@@ -3,13 +3,20 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
+
 #include <unistd.h>
+
+
+// ============================================================
+// Constructor
+// ============================================================
 
 MonitorAgent::MonitorAgent(
     double intervalSeconds
@@ -31,14 +38,21 @@ MonitorAgent::MonitorAgent(
     cpuCount_ =
         static_cast<std::size_t>(cpuCount);
 
+    // 检查采样周期是否合法
     if (intervalSeconds <= 0.0) {
-    throw std::invalid_argument(
-        "Sampling interval must be greater than 0"
-    );
+        throw std::invalid_argument(
+            "Sampling interval must be greater than 0"
+        );
+    }
+
+    intervalSeconds_ =
+        intervalSeconds;
 }
 
-intervalSeconds_ = intervalSeconds;
-}
+
+// ============================================================
+// Build unified metrics snapshot
+// ============================================================
 
 SystemMetrics MonitorAgent::buildMetrics(
     double cpuUsage,
@@ -52,9 +66,10 @@ SystemMetrics MonitorAgent::buildMetrics(
 ) const {
     SystemMetrics metrics;
 
-    // =========================
+
+    // --------------------------------------------------------
     // System
-    // =========================
+    // --------------------------------------------------------
 
     metrics.hostname =
         systemInfo.hostname;
@@ -66,17 +81,17 @@ SystemMetrics MonitorAgent::buildMetrics(
         cpuCount_;
 
 
-    // =========================
+    // --------------------------------------------------------
     // CPU
-    // =========================
+    // --------------------------------------------------------
 
     metrics.cpuUsagePercent =
         cpuUsage;
 
 
-    // =========================
+    // --------------------------------------------------------
     // Memory
-    // =========================
+    // --------------------------------------------------------
 
     metrics.memoryTotalKB =
         memory.totalKB;
@@ -91,9 +106,9 @@ SystemMetrics MonitorAgent::buildMetrics(
         memory.usagePercent();
 
 
-    // =========================
+    // --------------------------------------------------------
     // Load Average
-    // =========================
+    // --------------------------------------------------------
 
     metrics.load1 =
         load.load1;
@@ -105,9 +120,9 @@ SystemMetrics MonitorAgent::buildMetrics(
         load.load15;
 
 
-    // =========================
+    // --------------------------------------------------------
     // Disk
-    // =========================
+    // --------------------------------------------------------
 
     metrics.diskMountPoint =
         disk.mountPoint;
@@ -125,9 +140,9 @@ SystemMetrics MonitorAgent::buildMetrics(
         disk.usagePercent();
 
 
-    // =========================
+    // --------------------------------------------------------
     // Network
-    // =========================
+    // --------------------------------------------------------
 
     metrics.networkInterface =
         networkInterface_;
@@ -139,17 +154,17 @@ SystemMetrics MonitorAgent::buildMetrics(
         networkRate.txBytesPerSecond;
 
 
-    // =========================
+    // --------------------------------------------------------
     // Sampling
-    // =========================
+    // --------------------------------------------------------
 
     metrics.sampleIntervalSeconds =
         actualIntervalSeconds;
 
 
-    // =========================
+    // --------------------------------------------------------
     // Top Processes
-    // =========================
+    // --------------------------------------------------------
 
     const std::size_t topCount =
         std::min<std::size_t>(
@@ -190,90 +205,455 @@ SystemMetrics MonitorAgent::buildMetrics(
         );
     }
 
+
     return metrics;
 }
 
 
+// ============================================================
+// Display metrics on terminal
+// ============================================================
+
+void MonitorAgent::displayMetrics(
+    const SystemMetrics& metrics
+) const {
+    // --------------------------------------------------------
+    // Unit conversion constants
+    // --------------------------------------------------------
+
+    const double kbToGiB =
+        1024.0 * 1024.0;
+
+    const double kbToMiB =
+        1024.0;
+
+    const double bytesToGiB =
+        1024.0 * 1024.0 * 1024.0;
+
+    const double bytesToKiB =
+        1024.0;
+
+    const double bytesToMiB =
+        1024.0 * 1024.0;
+
+
+    // --------------------------------------------------------
+    // Memory conversion
+    // --------------------------------------------------------
+
+    const double totalMemoryGiB =
+        static_cast<double>(
+            metrics.memoryTotalKB
+        ) / kbToGiB;
+
+    const double usedMemoryGiB =
+        static_cast<double>(
+            metrics.memoryUsedKB
+        ) / kbToGiB;
+
+    const double availableMemoryGiB =
+        static_cast<double>(
+            metrics.memoryAvailableKB
+        ) / kbToGiB;
+
+
+    // --------------------------------------------------------
+    // Disk conversion
+    // --------------------------------------------------------
+
+    const double totalDiskGiB =
+        static_cast<double>(
+            metrics.diskTotalBytes
+        ) / bytesToGiB;
+
+    const double usedDiskGiB =
+        static_cast<double>(
+            metrics.diskUsedBytes
+        ) / bytesToGiB;
+
+    const double availableDiskGiB =
+        static_cast<double>(
+            metrics.diskAvailableBytes
+        ) / bytesToGiB;
+
+
+    // --------------------------------------------------------
+    // Network conversion
+    // --------------------------------------------------------
+
+    const double rxKiBPerSecond =
+        metrics.networkRxBytesPerSecond /
+        bytesToKiB;
+
+    const double txKiBPerSecond =
+        metrics.networkTxBytesPerSecond /
+        bytesToKiB;
+
+    const double rxMiBPerSecond =
+        metrics.networkRxBytesPerSecond /
+        bytesToMiB;
+
+    const double txMiBPerSecond =
+        metrics.networkTxBytesPerSecond /
+        bytesToMiB;
+
+
+    // --------------------------------------------------------
+    // Uptime conversion
+    // --------------------------------------------------------
+
+    const uint64_t uptime =
+        metrics.uptimeSeconds;
+
+    const uint64_t days =
+        uptime / 86400;
+
+    const uint64_t hours =
+        (uptime % 86400) / 3600;
+
+    const uint64_t minutes =
+        (uptime % 3600) / 60;
+
+
+    // --------------------------------------------------------
+    // Clear terminal
+    // --------------------------------------------------------
+
+    std::cout
+        << "\033[2J\033[H";
+
+    std::cout
+        << std::fixed
+        << std::setprecision(2);
+
+
+    // --------------------------------------------------------
+    // Header
+    // --------------------------------------------------------
+
+    std::cout
+        << "========================================\n";
+
+    std::cout
+        << "            LMonitor Agent\n";
+
+    std::cout
+        << "========================================\n\n";
+
+
+    // --------------------------------------------------------
+    // System
+    // --------------------------------------------------------
+
+    std::cout
+        << "Hostname        : "
+        << metrics.hostname
+        << '\n';
+
+    std::cout
+        << "Uptime          : "
+        << days
+        << " days "
+        << hours
+        << " hours "
+        << minutes
+        << " minutes\n";
+
+    std::cout
+        << "Logical CPUs    : "
+        << metrics.logicalCpuCount
+        << "\n\n";
+
+
+    // --------------------------------------------------------
+    // CPU
+    // --------------------------------------------------------
+
+    std::cout
+        << "CPU Usage       : "
+        << metrics.cpuUsagePercent
+        << " %\n";
+
+    std::cout
+        << "Sample Interval : "
+        << metrics.sampleIntervalSeconds
+        << " s\n\n";
+
+
+    // --------------------------------------------------------
+    // Memory
+    // --------------------------------------------------------
+
+    std::cout
+        << "Memory\n";
+
+    std::cout
+        << "  Total         : "
+        << totalMemoryGiB
+        << " GiB\n";
+
+    std::cout
+        << "  Used          : "
+        << usedMemoryGiB
+        << " GiB\n";
+
+    std::cout
+        << "  Available     : "
+        << availableMemoryGiB
+        << " GiB\n";
+
+    std::cout
+        << "  Usage         : "
+        << metrics.memoryUsagePercent
+        << " %\n\n";
+
+
+    // --------------------------------------------------------
+    // Load Average
+    // --------------------------------------------------------
+
+    std::cout
+        << "Load Average\n";
+
+    std::cout
+        << "  1 min         : "
+        << metrics.load1
+        << '\n';
+
+    std::cout
+        << "  5 min         : "
+        << metrics.load5
+        << '\n';
+
+    std::cout
+        << "  15 min        : "
+        << metrics.load15
+        << "\n\n";
+
+
+    // --------------------------------------------------------
+    // Disk
+    // --------------------------------------------------------
+
+    std::cout
+        << "Disk "
+        << metrics.diskMountPoint
+        << '\n';
+
+    std::cout
+        << "  Total         : "
+        << totalDiskGiB
+        << " GiB\n";
+
+    std::cout
+        << "  Used          : "
+        << usedDiskGiB
+        << " GiB\n";
+
+    std::cout
+        << "  Available     : "
+        << availableDiskGiB
+        << " GiB\n";
+
+    std::cout
+        << "  Usage         : "
+        << metrics.diskUsagePercent
+        << " %\n\n";
+
+
+    // --------------------------------------------------------
+    // Network
+    // --------------------------------------------------------
+
+    std::cout
+        << "Network "
+        << metrics.networkInterface
+        << '\n';
+
+    std::cout
+        << "  RX Rate       : "
+        << rxKiBPerSecond
+        << " KiB/s  ("
+        << rxMiBPerSecond
+        << " MiB/s)\n";
+
+    std::cout
+        << "  TX Rate       : "
+        << txKiBPerSecond
+        << " KiB/s  ("
+        << txMiBPerSecond
+        << " MiB/s)\n\n";
+
+
+    // --------------------------------------------------------
+    // Top Processes
+    // --------------------------------------------------------
+
+    std::cout
+        << "Top Processes (by CPU)\n\n";
+
+    std::cout
+        << std::left
+        << std::setw(10) << "PID"
+        << std::setw(12) << "CPU%"
+        << std::setw(12) << "MEM%"
+        << std::setw(14) << "RSS(MiB)"
+        << "NAME"
+        << '\n';
+
+    std::cout
+        << "------------------------------------------------------\n";
+
+
+    for (const auto& process :
+         metrics.topProcesses) {
+
+        const double rssMiB =
+            static_cast<double>(
+                process.residentMemoryKB
+            ) / kbToMiB;
+
+        std::cout
+            << std::left
+            << std::setw(10)
+            << process.pid
+
+            << std::setw(12)
+            << process.cpuUsagePercent
+
+            << std::setw(12)
+            << process.memoryUsagePercent
+
+            << std::setw(14)
+            << rssMiB
+
+            << process.name
+            << '\n';
+    }
+
+
+    std::cout
+        << "\n========================================\n";
+
+    std::cout.flush();
+}
+
+
+// ============================================================
+// Main monitoring loop
+// ============================================================
 
 void MonitorAgent::run(
     volatile std::sig_atomic_t& runningFlag
 ) {
-    // ========================================
-    // 第一次采样
-    // 这些数据作为后续计算的 previous
-    // ========================================
+    // --------------------------------------------------------
+    // Initial CPU snapshot
+    // --------------------------------------------------------
 
     CpuTimes previousCpu =
         cpuCollector_.readCpuTimes();
 
-    auto previousNetworkTime =
-    std::chrono::steady_clock::now();
 
-NetworkStats previousNetwork =
-    networkCollector_.collect(
-        networkInterface_
-    );
+    // --------------------------------------------------------
+    // Initial network snapshot
+    // --------------------------------------------------------
+
+    NetworkStats previousNetwork =
+        networkCollector_.collect(
+            networkInterface_
+        );
+
+    auto previousNetworkTime =
+        std::chrono::steady_clock::now();
+
+
+    // --------------------------------------------------------
+    // Initial process snapshot
+    // --------------------------------------------------------
 
     std::vector<ProcessSnapshot> previousProcesses =
         processCollector_.collectSnapshots();
 
-    const auto sampleInterval =
-    std::chrono::duration_cast<
-        std::chrono::steady_clock::duration
-    >(
-        std::chrono::duration<double>(
-            intervalSeconds_
-        )
-    );
 
-auto nextSampleTime =
-    std::chrono::steady_clock::now() +
-    sampleInterval;
-    // ========================================
-    // 主监控循环
-    // ========================================
+    // --------------------------------------------------------
+    // Fixed sampling interval
+    // --------------------------------------------------------
+
+    const auto sampleInterval =
+        std::chrono::duration_cast<
+            std::chrono::steady_clock::duration
+        >(
+            std::chrono::duration<double>(
+                intervalSeconds_
+            )
+        );
+
+
+    auto nextSampleTime =
+        std::chrono::steady_clock::now() +
+        sampleInterval;
+
+
+    // ========================================================
+    // Monitoring loop
+    // ========================================================
 
     while (runningFlag) {
 
-        // 等待一个采样周期
+        // 等待到下一个固定采样时间点
         std::this_thread::sleep_until(
-              nextSampleTime
-         );
+            nextSampleTime
+        );
 
-        // 如果 sleep 期间收到退出信号，
-        // 就不再进行下一轮采集
+        // sleep 期间可能收到 SIGINT / SIGTERM
         if (!runningFlag) {
             break;
         }
 
 
-        // ========================================
-        // 第二次采样
-        // ========================================
+        // ----------------------------------------------------
+        // CPU snapshot
+        // ----------------------------------------------------
 
         CpuTimes currentCpu =
             cpuCollector_.readCpuTimes();
 
-        const auto currentNetworkTime =
-    std::chrono::steady_clock::now();
 
-NetworkStats currentNetwork =
-    networkCollector_.collect(
-        networkInterface_
-    );
+        // ----------------------------------------------------
+        // Network snapshot
+        // ----------------------------------------------------
+
+        NetworkStats currentNetwork =
+            networkCollector_.collect(
+                networkInterface_
+            );
+
+        const auto currentNetworkTime =
+            std::chrono::steady_clock::now();
+
+
+        // ----------------------------------------------------
+        // Process snapshot
+        // ----------------------------------------------------
 
         std::vector<ProcessSnapshot> currentProcesses =
             processCollector_.collectSnapshots();
-          
-	const double actualIntervalSeconds =
-    std::chrono::duration<double>(
-        currentNetworkTime -
-        previousNetworkTime
-    ).count();
 
-        // ========================================
-        // CPU 使用率
-        // ========================================
+
+        // ----------------------------------------------------
+        // Actual network sampling interval
+        // ----------------------------------------------------
+
+        const double actualIntervalSeconds =
+            std::chrono::duration<double>(
+                currentNetworkTime -
+                previousNetworkTime
+            ).count();
+
+
+        // ----------------------------------------------------
+        // CPU usage
+        // ----------------------------------------------------
 
         const double cpuUsage =
             cpuCollector_.calculateUsage(
@@ -281,14 +661,15 @@ NetworkStats currentNetwork =
                 currentCpu
             );
 
+
         const uint64_t totalCpuDelta =
             currentCpu.total() -
             previousCpu.total();
 
 
-        // ========================================
-        // 网络速率
-        // ========================================
+        // ----------------------------------------------------
+        // Network rate
+        // ----------------------------------------------------
 
         const NetworkRate networkRate =
             networkCollector_.calculateRate(
@@ -298,9 +679,9 @@ NetworkStats currentNetwork =
             );
 
 
-        // ========================================
-        // 采集当前即时信息
-        // ========================================
+        // ----------------------------------------------------
+        // Instant metrics
+        // ----------------------------------------------------
 
         const MemoryInfo memory =
             memoryCollector_.collect();
@@ -315,9 +696,9 @@ NetworkStats currentNetwork =
             diskCollector_.collect("/");
 
 
-        // ========================================
-        // 计算进程 CPU / Memory 使用率
-        // ========================================
+        // ----------------------------------------------------
+        // Process usage
+        // ----------------------------------------------------
 
         const std::vector<ProcessInfo> processes =
             processCollector_.calculateUsage(
@@ -328,346 +709,75 @@ NetworkStats currentNetwork =
                 cpuCount_
             );
 
-        
-	const SystemMetrics metrics =
-    buildMetrics(
-        cpuUsage,
-        actualIntervalSeconds,
-        memory,
-        load,
-        systemInfo,
-        disk,
-        networkRate,
-        processes
-    );
-        // ========================================
-        // 单位换算
-        // ========================================
 
-        const double kbToGiB =
-            1024.0 * 1024.0;
-
-        const double kbToMiB =
-            1024.0;
-
-        const double bytesToGiB =
-            1024.0 * 1024.0 * 1024.0;
-
-        const double bytesToKiB =
-            1024.0;
-
-        const double bytesToMiB =
-            1024.0 * 1024.0;
-
-
-        const double totalMemoryGiB =
-            static_cast<double>(
-                memory.totalKB
-            ) / kbToGiB;
-
-        const double usedMemoryGiB =
-            static_cast<double>(
-                memory.usedKB()
-            ) / kbToGiB;
-
-        const double availableMemoryGiB =
-            static_cast<double>(
-                memory.availableKB
-            ) / kbToGiB;
-
-
-        const double totalDiskGiB =
-            static_cast<double>(
-                disk.totalBytes
-            ) / bytesToGiB;
-
-        const double usedDiskGiB =
-            static_cast<double>(
-                disk.usedBytes
-            ) / bytesToGiB;
-
-        const double availableDiskGiB =
-            static_cast<double>(
-                disk.availableBytes
-            ) / bytesToGiB;
-
-
-        const double rxKiBPerSecond =
-            networkRate.rxBytesPerSecond /
-            bytesToKiB;
-
-        const double txKiBPerSecond =
-            networkRate.txBytesPerSecond /
-            bytesToKiB;
-
-        const double rxMiBPerSecond =
-            networkRate.rxBytesPerSecond /
-            bytesToMiB;
-
-        const double txMiBPerSecond =
-            networkRate.txBytesPerSecond /
-            bytesToMiB;
-
-
-        // ========================================
-        // Uptime 转换
-        // ========================================
-
-        const uint64_t uptime =
-            systemInfo.uptimeSeconds;
-
-        const uint64_t days =
-            uptime / 86400;
-
-        const uint64_t hours =
-            (uptime % 86400) / 3600;
-
-        const uint64_t minutes =
-            (uptime % 3600) / 60;
-
-
-        // ========================================
-        // 清屏
-        // ========================================
-
-        std::cout << "\033[2J\033[H";
-
-        std::cout
-            << std::fixed
-            << std::setprecision(2);
-
-
-        // ========================================
-        // System
-        // ========================================
-
-        std::cout
-            << "========================================\n";
-
-        std::cout
-            << "            LMonitor Agent\n";
-
-        std::cout
-            << "========================================\n\n";
-
-        std::cout
-            << "Hostname        : "
-            << systemInfo.hostname
-            << '\n';
-
-        std::cout
-            << "Uptime          : "
-            << days
-            << " days "
-            << hours
-            << " hours "
-            << minutes
-            << " minutes\n";
-
-        std::cout
-            << "Logical CPUs    : "
-            << cpuCount_
-            << "\n\n";
-
-
-        // ========================================
-        // CPU
-        // ========================================
-
-        std::cout
-            << "CPU Usage       : "
-            << cpuUsage
-            << " %\n\n";
-
-        std::cout
-            << "Sample Interval : "
-            << metrics.sampleIntervalSeconds
-            << " s\n\n";  
-        // ========================================
-        // Memory
-        // ========================================
-
-        std::cout
-            << "Memory\n";
-
-        std::cout
-            << "  Total         : "
-            << totalMemoryGiB
-            << " GiB\n";
-
-        std::cout
-            << "  Used          : "
-            << usedMemoryGiB
-            << " GiB\n";
-
-        std::cout
-            << "  Available     : "
-            << availableMemoryGiB
-            << " GiB\n";
-
-        std::cout
-            << "  Usage         : "
-            << memory.usagePercent()
-            << " %\n\n";
-
-
-        // ========================================
-        // Load Average
-        // ========================================
-
-        std::cout
-            << "Load Average\n";
-
-        std::cout
-            << "  1 min         : "
-            << load.load1
-            << '\n';
-
-        std::cout
-            << "  5 min         : "
-            << load.load5
-            << '\n';
-
-        std::cout
-            << "  15 min        : "
-            << load.load15
-            << "\n\n";
-
-
-        // ========================================
-        // Disk
-        // ========================================
-
-        std::cout
-            << "Disk "
-            << disk.mountPoint
-            << '\n';
-
-        std::cout
-            << "  Total         : "
-            << totalDiskGiB
-            << " GiB\n";
-
-        std::cout
-            << "  Used          : "
-            << usedDiskGiB
-            << " GiB\n";
-
-        std::cout
-            << "  Available     : "
-            << availableDiskGiB
-            << " GiB\n";
-
-        std::cout
-            << "  Usage         : "
-            << disk.usagePercent()
-            << " %\n\n";
-
-
-        // ========================================
-        // Network
-        // ========================================
-
-        std::cout
-            << "Network "
-            << networkInterface_
-            << '\n';
-
-        std::cout
-            << "  RX Rate       : "
-            << rxKiBPerSecond
-            << " KiB/s"
-            << "  ("
-            << rxMiBPerSecond
-            << " MiB/s)\n";
-
-        std::cout
-            << "  TX Rate       : "
-            << txKiBPerSecond
-            << " KiB/s"
-            << "  ("
-            << txMiBPerSecond
-            << " MiB/s)\n\n";
-
-
-        // ========================================
-        // Top Processes
-        // ========================================
-
-        std::cout
-            << "Top Processes (by CPU)\n\n";
-
-        std::cout
-            << std::left
-            << std::setw(10) << "PID"
-            << std::setw(12) << "CPU%"
-            << std::setw(12) << "MEM%"
-            << std::setw(14) << "RSS(MiB)"
-            << "NAME"
-            << '\n';
-
-        std::cout
-            << "------------------------------------------------------\n";
-
-        const std::size_t topCount =
-            std::min<std::size_t>(
-                5,
-                processes.size()
+        // ----------------------------------------------------
+        // Build unified metrics snapshot
+        // ----------------------------------------------------
+
+        const SystemMetrics metrics =
+            buildMetrics(
+                cpuUsage,
+                actualIntervalSeconds,
+                memory,
+                load,
+                systemInfo,
+                disk,
+                networkRate,
+                processes
             );
 
-        for (std::size_t i = 0;
-             i < topCount;
-             ++i) {
 
-            const ProcessInfo& process =
-                processes[i];
+        // ----------------------------------------------------
+        // Display
+        // ----------------------------------------------------
+        //终端显示
+        displayMetrics(
+            metrics
+        );
+       
+	//序列化
+	const std::string serializedMetrics =
+    metricsSerializer_.serialize(
+        metrics
+    );
+       //临时写入文件，验证网络发送前的数据格式
+std::ofstream metricsFile(
+    "/tmp/lmonitor_metrics.txt",
+    std::ios::trunc
+);
 
-            const double rssMiB =
-                static_cast<double>(
-                    process.residentMemoryKB
-                ) / kbToMiB;
+if (!metricsFile.is_open()) {
+    throw std::runtime_error(
+        "Failed to open /tmp/lmonitor_metrics.txt"
+    );
+}
 
-            std::cout
-                << std::left
-                << std::setw(10)
-                << process.pid
-
-                << std::setw(12)
-                << process.cpuUsage
-
-                << std::setw(12)
-                << process.memoryUsage
-
-                << std::setw(14)
-                << rssMiB
-
-                << process.name
-                << '\n';
-        }
-
-        std::cout
-            << "\n========================================\n";
-
-        std::cout.flush();
+metricsFile
+    << serializedMetrics;
 
 
-        // ========================================
-        // 当前采样变成下一轮 previous
-        // ========================================
-
+        // ----------------------------------------------------
+        // Current snapshot becomes previous snapshot
+        // ----------------------------------------------------
+          //当前快照变成下一轮previous
         previousCpu =
             currentCpu;
 
         previousNetwork =
             currentNetwork;
 
-	previousNetworkTime =
+        previousNetworkTime =
             currentNetworkTime;
 
         previousProcesses =
             std::move(currentProcesses);
 
-	nextSampleTime +=
+
+        // ----------------------------------------------------
+        // Schedule next sample
+        // ----------------------------------------------------
+
+        nextSampleTime +=
             sampleInterval;
     }
 }

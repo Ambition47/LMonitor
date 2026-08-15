@@ -9,7 +9,7 @@
 #include "collector/ProcessCollector.h"
 #include "collector/SystemCollector.h"
 #include "model/SystemMetrics.h"
-
+#include "serializer/MetricsSerializer.h"
 
 #include <csignal>
 #include <cstddef>
@@ -50,6 +50,8 @@ private:
     DiskCollector diskCollector_;
     NetworkCollector networkCollector_;
     ProcessCollector processCollector_;
+
+    MetricsSerializer metricsSerializer_;
 
     std::string networkInterface_;
 
