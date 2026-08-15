@@ -2,6 +2,9 @@
 
 #include <csignal>
 #include <iostream>
+#include <stdexcept>
+#include <string>
+
 
 namespace {
 
@@ -45,7 +48,58 @@ bool registerSignalHandlers() {
 }  // namespace
 
 
-int main() {
+int main(
+    int argc,
+    char* argv[]
+) {
+     double intervalSeconds = 1.0;
+
+for (int i = 1; i < argc; ++i) {
+    const std::string argument =
+        argv[i];
+
+    if (argument == "--interval") {
+
+        if (i + 1 >= argc) {
+            throw std::invalid_argument(
+                "--interval requires a value"
+            );
+        }
+
+        intervalSeconds =
+            std::stod(argv[++i]);
+
+        if (intervalSeconds <= 0.0) {
+            throw std::invalid_argument(
+                "Interval must be greater than 0"
+            );
+        }
+
+    } else if (argument == "--help" ||
+               argument == "-h") {
+
+        std::cout
+            << "Usage: "
+            << argv[0]
+            << " [--interval seconds]\n\n"
+            << "Options:\n"
+            << "  --interval <seconds>"
+            << "  Sampling interval, default: 1.0\n"
+            << "  -h, --help"
+            << "          Show this help message\n";
+
+        return 0;
+
+    } else {
+        throw std::invalid_argument(
+            "Unknown argument: " +
+            argument
+        );
+    }
+}
+
+
+
     try {
         // 注册 SIGINT / SIGTERM
         if (!registerSignalHandlers()) {
@@ -56,8 +110,9 @@ int main() {
             return 1;
         }
 
-        // 创建并初始化监控 Agent
-        MonitorAgent agent;
+        MonitorAgent agent(
+    intervalSeconds
+);
 
         // 启动监控循环
         agent.run(g_running);

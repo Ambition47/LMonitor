@@ -15,8 +15,10 @@
 
 class MonitorAgent {
 public:
-    MonitorAgent();
-
+    explicit MonitorAgent(
+    double intervalSeconds = 1.0
+);
+            
     void run(
         volatile std::sig_atomic_t& runningFlag
     );

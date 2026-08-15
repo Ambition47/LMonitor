@@ -11,7 +11,9 @@
 #include <vector>
 #include <unistd.h>
 
-MonitorAgent::MonitorAgent() {
+MonitorAgent::MonitorAgent(
+    double intervalSeconds
+) {
     // 自动检测默认网络接口
     networkInterface_ =
         networkCollector_.detectDefaultInterface();
@@ -29,8 +31,13 @@ MonitorAgent::MonitorAgent() {
     cpuCount_ =
         static_cast<std::size_t>(cpuCount);
 
-    // 默认采样周期：1 秒
-    intervalSeconds_ = 1.0;
+    if (intervalSeconds <= 0.0) {
+    throw std::invalid_argument(
+        "Sampling interval must be greater than 0"
+    );
+}
+
+intervalSeconds_ = intervalSeconds;
 }
 
 
