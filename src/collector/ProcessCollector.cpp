@@ -64,7 +64,8 @@ bool readProcessName(
 bool readProcessCpuTimes(
     int pid,
     uint64_t& userTime,
-    uint64_t& systemTime
+    uint64_t& systemTime,
+    uint64_t& startTime
 ) {
     const std::string path =
         "/proc/" +
@@ -116,21 +117,35 @@ bool readProcessCpuTimes(
     unsigned long majflt;
     unsigned long cmajflt;
 
+    int64_t childUserTime;
+    int64_t childSystemTime;
+    int64_t priority;
+    int64_t niceValue;
+    int64_t numThreads;
+    int64_t itrealValue;
+
     if (!(iss >> state
-              >> ppid
-              >> pgrp
-              >> session
-              >> ttyNr
-              >> tpgid
-              >> flags
-              >> minflt
-              >> cminflt
-              >> majflt
-              >> cmajflt
-              >> userTime
-              >> systemTime)) {
-        return false;
-    }
+          >> ppid
+          >> pgrp
+          >> session
+          >> ttyNr
+          >> tpgid
+          >> flags
+          >> minflt
+          >> cminflt
+          >> majflt
+          >> cmajflt
+          >> userTime
+          >> systemTime
+          >> childUserTime
+          >> childSystemTime
+          >> priority
+          >> niceValue
+          >> numThreads
+          >> itrealValue
+          >> startTime)) {
+    return false;
+}
 
     return true;
 }
@@ -216,7 +231,8 @@ ProcessCollector::collectSnapshots() const {
         if (!readProcessCpuTimes(
                 snapshot.pid,
                 snapshot.userTime,
-                snapshot.systemTime)) {
+                snapshot.systemTime,
+		snapshot.startTime)) {
             continue;
         }
 
@@ -282,6 +298,11 @@ ProcessCollector::calculateUsage(
 
         const ProcessSnapshot& previousProcess =
             *(it->second);
+	// PID 相同但启动时间不同，说明 PID 已被重用
+	if (currentProcess.startTime !=
+    previousProcess.startTime) {
+    continue;
+}
 
         // 防御性检查
         if (currentProcess.totalCpuTime() <

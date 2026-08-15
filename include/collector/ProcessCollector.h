@@ -13,6 +13,8 @@ struct ProcessSnapshot {
     uint64_t userTime = 0;
     uint64_t systemTime = 0;
 
+    uint64_t startTime = 0;
+
     uint64_t residentMemoryKB = 0;
 
     uint64_t totalCpuTime() const {
