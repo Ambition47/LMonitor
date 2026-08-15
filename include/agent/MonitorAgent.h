@@ -8,10 +8,14 @@
 #include "collector/NetworkCollector.h"
 #include "collector/ProcessCollector.h"
 #include "collector/SystemCollector.h"
+#include "model/SystemMetrics.h"
+
 
 #include <csignal>
 #include <cstddef>
 #include <string>
+#include <vector>
+
 
 class MonitorAgent {
 public:
@@ -24,6 +28,21 @@ public:
     );
 
 private:
+        SystemMetrics buildMetrics(
+        double cpuUsage,
+        double actualIntervalSeconds,
+        const MemoryInfo& memory,
+        const LoadInfo& load,
+        const SystemInfo& systemInfo,
+        const DiskInfo& disk,
+        const NetworkRate& networkRate,
+        const std::vector<ProcessInfo>& processes
+    ) const;
+
+    void displayMetrics(
+        const SystemMetrics& metrics
+    ) const;
+
     CpuCollector cpuCollector_;
     MemoryCollector memoryCollector_;
     LoadCollector loadCollector_;

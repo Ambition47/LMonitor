@@ -40,6 +40,160 @@ MonitorAgent::MonitorAgent(
 intervalSeconds_ = intervalSeconds;
 }
 
+SystemMetrics MonitorAgent::buildMetrics(
+    double cpuUsage,
+    double actualIntervalSeconds,
+    const MemoryInfo& memory,
+    const LoadInfo& load,
+    const SystemInfo& systemInfo,
+    const DiskInfo& disk,
+    const NetworkRate& networkRate,
+    const std::vector<ProcessInfo>& processes
+) const {
+    SystemMetrics metrics;
+
+    // =========================
+    // System
+    // =========================
+
+    metrics.hostname =
+        systemInfo.hostname;
+
+    metrics.uptimeSeconds =
+        systemInfo.uptimeSeconds;
+
+    metrics.logicalCpuCount =
+        cpuCount_;
+
+
+    // =========================
+    // CPU
+    // =========================
+
+    metrics.cpuUsagePercent =
+        cpuUsage;
+
+
+    // =========================
+    // Memory
+    // =========================
+
+    metrics.memoryTotalKB =
+        memory.totalKB;
+
+    metrics.memoryUsedKB =
+        memory.usedKB();
+
+    metrics.memoryAvailableKB =
+        memory.availableKB;
+
+    metrics.memoryUsagePercent =
+        memory.usagePercent();
+
+
+    // =========================
+    // Load Average
+    // =========================
+
+    metrics.load1 =
+        load.load1;
+
+    metrics.load5 =
+        load.load5;
+
+    metrics.load15 =
+        load.load15;
+
+
+    // =========================
+    // Disk
+    // =========================
+
+    metrics.diskMountPoint =
+        disk.mountPoint;
+
+    metrics.diskTotalBytes =
+        disk.totalBytes;
+
+    metrics.diskUsedBytes =
+        disk.usedBytes;
+
+    metrics.diskAvailableBytes =
+        disk.availableBytes;
+
+    metrics.diskUsagePercent =
+        disk.usagePercent();
+
+
+    // =========================
+    // Network
+    // =========================
+
+    metrics.networkInterface =
+        networkInterface_;
+
+    metrics.networkRxBytesPerSecond =
+        networkRate.rxBytesPerSecond;
+
+    metrics.networkTxBytesPerSecond =
+        networkRate.txBytesPerSecond;
+
+
+    // =========================
+    // Sampling
+    // =========================
+
+    metrics.sampleIntervalSeconds =
+        actualIntervalSeconds;
+
+
+    // =========================
+    // Top Processes
+    // =========================
+
+    const std::size_t topCount =
+        std::min<std::size_t>(
+            5,
+            processes.size()
+        );
+
+    metrics.topProcesses.reserve(
+        topCount
+    );
+
+    for (std::size_t i = 0;
+         i < topCount;
+         ++i) {
+
+        const ProcessInfo& process =
+            processes[i];
+
+        ProcessMetric metric;
+
+        metric.pid =
+            process.pid;
+
+        metric.name =
+            process.name;
+
+        metric.cpuUsagePercent =
+            process.cpuUsage;
+
+        metric.memoryUsagePercent =
+            process.memoryUsage;
+
+        metric.residentMemoryKB =
+            process.residentMemoryKB;
+
+        metrics.topProcesses.push_back(
+            std::move(metric)
+        );
+    }
+
+    return metrics;
+}
+
+
 
 void MonitorAgent::run(
     volatile std::sig_atomic_t& runningFlag
@@ -174,7 +328,18 @@ NetworkStats currentNetwork =
                 cpuCount_
             );
 
-
+        
+	const SystemMetrics metrics =
+    buildMetrics(
+        cpuUsage,
+        actualIntervalSeconds,
+        memory,
+        load,
+        systemInfo,
+        disk,
+        networkRate,
+        processes
+    );
         // ========================================
         // 单位换算
         // ========================================
@@ -314,7 +479,10 @@ NetworkStats currentNetwork =
             << cpuUsage
             << " %\n\n";
 
-
+        std::cout
+            << "Sample Interval : "
+            << metrics.sampleIntervalSeconds
+            << " s\n\n";  
         // ========================================
         // Memory
         // ========================================
