@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
@@ -252,28 +253,37 @@ ProcessCollector::calculateUsage(
         return result;
     }
 
+    // PID -> 上一次采样中的进程快照
+    std::unordered_map<
+        int,
+        const ProcessSnapshot*
+    > previousByPid;
+
+    // 提前预留空间，减少 unordered_map 扩容
+    previousByPid.reserve(previous.size());
+
+    for (const auto& process : previous) {
+        previousByPid[process.pid] =
+            &process;
+    }
+
     for (const auto& currentProcess : current) {
 
-        auto it = std::find_if(
-            previous.begin(),
-            previous.end(),
-            [&currentProcess](
-                const ProcessSnapshot& previousProcess
-            ) {
-                return previousProcess.pid ==
-                       currentProcess.pid;
-            }
-        );
+        const auto it =
+            previousByPid.find(
+                currentProcess.pid
+            );
 
-        // 第一次采样时没有该进程
-        if (it == previous.end()) {
+        // 当前进程在上一轮不存在，
+        // 说明它可能是刚启动的进程
+        if (it == previousByPid.end()) {
             continue;
         }
 
         const ProcessSnapshot& previousProcess =
-            *it;
+            *(it->second);
 
-        // 防止计数异常或 PID 重用导致下溢
+        // 防御性检查
         if (currentProcess.totalCpuTime() <
             previousProcess.totalCpuTime()) {
             continue;
@@ -294,33 +304,42 @@ ProcessCollector::calculateUsage(
         info.residentMemoryKB =
             currentProcess.residentMemoryKB;
 
-        // 单进程占满一个逻辑 CPU 时约为 100%
         info.cpuUsage =
             100.0 *
-            static_cast<double>(processCpuDelta) /
-            static_cast<double>(totalCpuDelta) *
-            static_cast<double>(cpuCount);
+            static_cast<double>(
+                processCpuDelta
+            ) /
+            static_cast<double>(
+                totalCpuDelta
+            ) *
+            static_cast<double>(
+                cpuCount
+            );
 
-        // VmRSS / 系统总物理内存
         info.memoryUsage =
             100.0 *
             static_cast<double>(
                 currentProcess.residentMemoryKB
             ) /
-            static_cast<double>(totalMemoryKB);
+            static_cast<double>(
+                totalMemoryKB
+            );
 
         result.push_back(info);
     }
 
-    // CPU 使用率从高到低排序
     std::sort(
         result.begin(),
         result.end(),
         [](const ProcessInfo& a,
            const ProcessInfo& b) {
-            return a.cpuUsage > b.cpuUsage;
+            return a.cpuUsage >
+                   b.cpuUsage;
         }
     );
 
     return result;
 }
+
+
+
