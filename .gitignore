@@ -1,0 +1,14 @@
+build/
+
+*.o
+*.out
+
+*.bak
+*_before_*.cpp
+*_once.cpp
+
+.vscode/
+.idea/
+
+*.swp
+*~
