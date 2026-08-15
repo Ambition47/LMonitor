@@ -45,10 +45,13 @@ void MonitorAgent::run(
     CpuTimes previousCpu =
         cpuCollector_.readCpuTimes();
 
-    NetworkStats previousNetwork =
-        networkCollector_.collect(
-            networkInterface_
-        );
+    auto previousNetworkTime =
+    std::chrono::steady_clock::now();
+
+NetworkStats previousNetwork =
+    networkCollector_.collect(
+        networkInterface_
+    );
 
     std::vector<ProcessSnapshot> previousProcesses =
         processCollector_.collectSnapshots();
@@ -81,14 +84,22 @@ void MonitorAgent::run(
         CpuTimes currentCpu =
             cpuCollector_.readCpuTimes();
 
-        NetworkStats currentNetwork =
-            networkCollector_.collect(
-                networkInterface_
-            );
+        const auto currentNetworkTime =
+    std::chrono::steady_clock::now();
+
+NetworkStats currentNetwork =
+    networkCollector_.collect(
+        networkInterface_
+    );
 
         std::vector<ProcessSnapshot> currentProcesses =
             processCollector_.collectSnapshots();
-
+          
+	const double actualIntervalSeconds =
+    std::chrono::duration<double>(
+        currentNetworkTime -
+        previousNetworkTime
+    ).count();
 
         // ========================================
         // CPU 使用率
@@ -113,7 +124,7 @@ void MonitorAgent::run(
             networkCollector_.calculateRate(
                 previousNetwork,
                 currentNetwork,
-                intervalSeconds_
+                actualIntervalSeconds
             );
 
 
@@ -465,6 +476,9 @@ void MonitorAgent::run(
 
         previousNetwork =
             currentNetwork;
+
+	previousNetworkTime =
+            currentNetworkTime;
 
         previousProcesses =
             std::move(currentProcesses);
