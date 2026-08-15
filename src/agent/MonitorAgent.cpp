@@ -56,7 +56,18 @@ NetworkStats previousNetwork =
     std::vector<ProcessSnapshot> previousProcesses =
         processCollector_.collectSnapshots();
 
+    const auto sampleInterval =
+    std::chrono::duration_cast<
+        std::chrono::steady_clock::duration
+    >(
+        std::chrono::duration<double>(
+            intervalSeconds_
+        )
+    );
 
+auto nextSampleTime =
+    std::chrono::steady_clock::now() +
+    sampleInterval;
     // ========================================
     // 主监控循环
     // ========================================
@@ -64,11 +75,9 @@ NetworkStats previousNetwork =
     while (runningFlag) {
 
         // 等待一个采样周期
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>(
-                intervalSeconds_
-            )
-        );
+        std::this_thread::sleep_until(
+              nextSampleTime
+         );
 
         // 如果 sleep 期间收到退出信号，
         // 就不再进行下一轮采集
@@ -482,5 +491,8 @@ NetworkStats currentNetwork =
 
         previousProcesses =
             std::move(currentProcesses);
+
+	nextSampleTime +=
+            sampleInterval;
     }
 }
