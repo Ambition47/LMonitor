@@ -1,5 +1,7 @@
 #include "server/TcpServer.h"
 
+#include "reactor/EventLoop.h"
+
 #include <cerrno>
 #include <fcntl.h>
 #include <iostream>
@@ -20,7 +22,7 @@ constexpr int BUFFER_SIZE = 4096;
 
 
 // ============================================================
-// Set socket to non-blocking mode
+// Set fd to non-blocking mode
 // ============================================================
 
 void setNonBlocking(
@@ -39,6 +41,7 @@ void setNonBlocking(
         );
     }
 
+
     if (fcntl(
             fd,
             F_SETFL,
@@ -53,7 +56,7 @@ void setNonBlocking(
 
 
 // ============================================================
-// Parse all complete LMonitor messages from pending data
+// Parse complete LMonitor messages
 // ============================================================
 
 void processMessages(
@@ -63,22 +66,26 @@ void processMessages(
     const std::string delimiter =
         "END\n";
 
+
     while (true) {
 
-        const std::size_t position =
+        const std::size_t delimiterPosition =
             pendingData.find(
                 delimiter
             );
 
-        if (position ==
+
+        if (delimiterPosition ==
             std::string::npos) {
 
             break;
         }
 
+
         const std::size_t messageLength =
-            position +
+            delimiterPosition +
             delimiter.size();
+
 
         const std::string message =
             pendingData.substr(
@@ -86,10 +93,12 @@ void processMessages(
                 messageLength
             );
 
+
         pendingData.erase(
             0,
             messageLength
         );
+
 
         std::cout
             << "\n========== Metrics Received ==========\n";
@@ -120,7 +129,7 @@ TcpServer::TcpServer(
     : port_(port) {
 
     // --------------------------------------------------------
-    // Create TCP socket
+    // Create TCP listening socket
     // --------------------------------------------------------
 
     serverFd_ =
@@ -130,6 +139,7 @@ TcpServer::TcpServer(
             0
         );
 
+
     if (serverFd_ < 0) {
         throw std::runtime_error(
             "Failed to create server socket"
@@ -138,10 +148,11 @@ TcpServer::TcpServer(
 
 
     // --------------------------------------------------------
-    // Allow quick port reuse
+    // Allow port reuse
     // --------------------------------------------------------
 
     int reuse = 1;
+
 
     if (setsockopt(
             serverFd_,
@@ -151,9 +162,12 @@ TcpServer::TcpServer(
             sizeof(reuse)
         ) < 0) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
 
         serverFd_ = -1;
+
 
         throw std::runtime_error(
             "Failed to set SO_REUSEADDR"
@@ -162,7 +176,7 @@ TcpServer::TcpServer(
 
 
     // --------------------------------------------------------
-    // Set listening socket to non-blocking mode
+    // Listening socket must be non-blocking
     // --------------------------------------------------------
 
     try {
@@ -173,7 +187,9 @@ TcpServer::TcpServer(
 
     } catch (...) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
 
         serverFd_ = -1;
 
@@ -182,7 +198,7 @@ TcpServer::TcpServer(
 
 
     // --------------------------------------------------------
-    // Server address
+    // Configure server address
     // --------------------------------------------------------
 
     sockaddr_in serverAddress {};
@@ -213,9 +229,12 @@ TcpServer::TcpServer(
             sizeof(serverAddress)
         ) < 0) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
 
         serverFd_ = -1;
+
 
         throw std::runtime_error(
             "Failed to bind server socket"
@@ -232,9 +251,12 @@ TcpServer::TcpServer(
             SOMAXCONN
         ) < 0) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
 
         serverFd_ = -1;
+
 
         throw std::runtime_error(
             "Failed to listen on server socket"
@@ -260,134 +282,93 @@ TcpServer::~TcpServer() {
 
 
 // ============================================================
-// epoll event loop
+// Server event loop
 // ============================================================
 
 void TcpServer::run() {
 
-    // --------------------------------------------------------
-    // Create epoll instance
-    // --------------------------------------------------------
+    // ========================================================
+    // EventLoop owns the epoll instance
+    // ========================================================
 
-    const int epollFd =
-        epoll_create1(
-            EPOLL_CLOEXEC
-        );
-
-    if (epollFd < 0) {
-        throw std::runtime_error(
-            "Failed to create epoll instance"
-        );
-    }
+    EventLoop eventLoop(
+        MAX_EVENTS
+    );
 
 
     // --------------------------------------------------------
-    // Add listening socket to epoll
+    // Register listening socket
     // --------------------------------------------------------
 
-    epoll_event serverEvent {};
-
-    serverEvent.events =
-        EPOLLIN;
-
-    serverEvent.data.fd =
-        serverFd_;
-
-
-    if (epoll_ctl(
-            epollFd,
-            EPOLL_CTL_ADD,
-            serverFd_,
-            &serverEvent
-        ) < 0) {
-
-        close(
-            epollFd
-        );
-
-        throw std::runtime_error(
-            "Failed to add server socket to epoll"
-        );
-    }
+    eventLoop.addFd(
+        serverFd_,
+        EPOLLIN
+    );
 
 
     std::cout
-        << "LMonitor epoll Server listening on port "
+        << "LMonitor Reactor Server listening on port "
         << port_
         << "...\n";
 
 
-    // --------------------------------------------------------
-    // Each client needs its own TCP receive buffer
-    // --------------------------------------------------------
+    // ========================================================
+    // Per-client state
+    // ========================================================
 
+    // fd -> unfinished TCP stream data
     std::unordered_map<
         int,
         std::string
     > pendingDataByClient;
 
 
-    // fd -> "IP:port"
+    // fd -> readable client address
     std::unordered_map<
         int,
         std::string
     > clientNames;
 
 
-    epoll_event events[
-        MAX_EVENTS
-    ];
-
-
     // ========================================================
-    // Main epoll event loop
+    // Event loop
     // ========================================================
 
     while (true) {
 
+        // ----------------------------------------------------
+        // Wait until one or more registered fds become ready
+        // ----------------------------------------------------
+
         const int readyCount =
-            epoll_wait(
-                epollFd,
-                events,
-                MAX_EVENTS,
-                -1
-            );
+            eventLoop.wait();
 
 
-        if (readyCount < 0) {
-
-            if (errno == EINTR) {
-                continue;
-            }
-
-            close(
-                epollFd
-            );
-
-            throw std::runtime_error(
-                "epoll_wait failed"
-            );
-        }
-
-
-        // ====================================================
-        // Process ready events
-        // ====================================================
+        // ----------------------------------------------------
+        // Process all ready events
+        // ----------------------------------------------------
 
         for (int i = 0;
              i < readyCount;
              ++i) {
 
+            const epoll_event& event =
+                eventLoop.getEvent(
+                    i
+                );
+
+
             const int eventFd =
-                events[i].data.fd;
+                event.data.fd;
+
 
             const uint32_t eventFlags =
-                events[i].events;
+                event.events;
 
 
             // =================================================
-            // Listening socket ready:
-            // one or more new clients are waiting
+            // Listening socket:
+            // new TCP connections are waiting
             // =================================================
 
             if (eventFd ==
@@ -397,11 +378,16 @@ void TcpServer::run() {
 
                     sockaddr_in clientAddress {};
 
+
                     socklen_t clientAddressLength =
                         sizeof(
                             clientAddress
                         );
 
+
+                    // -----------------------------------------
+                    // Accept client directly as non-blocking
+                    // -----------------------------------------
 
                     const int clientFd =
                         accept4(
@@ -421,13 +407,14 @@ void TcpServer::run() {
                             continue;
                         }
 
+
                         if (errno == EAGAIN ||
                             errno == EWOULDBLOCK) {
 
-                            // All pending connections
-                            // have been accepted.
+                            // No more connections waiting.
                             break;
                         }
+
 
                         std::cerr
                             << "accept4 failed\n";
@@ -437,7 +424,7 @@ void TcpServer::run() {
 
 
                     // -----------------------------------------
-                    // Convert client address to readable string
+                    // Convert client IP address
                     // -----------------------------------------
 
                     char clientIp[
@@ -476,28 +463,25 @@ void TcpServer::run() {
 
 
                     // -----------------------------------------
-                    // Add client socket to epoll
+                    // Register client with EventLoop
                     // -----------------------------------------
 
-                    epoll_event clientEvent {};
+                    try {
 
-                    clientEvent.events =
-                        EPOLLIN |
-                        EPOLLRDHUP;
-
-                    clientEvent.data.fd =
-                        clientFd;
-
-
-                    if (epoll_ctl(
-                            epollFd,
-                            EPOLL_CTL_ADD,
+                        eventLoop.addFd(
                             clientFd,
-                            &clientEvent
-                        ) < 0) {
+                            EPOLLIN |
+                            EPOLLRDHUP
+                        );
+
+                    } catch (
+                        const std::exception& e
+                    ) {
 
                         std::cerr
-                            << "Failed to add client to epoll\n";
+                            << "Failed to register client: "
+                            << e.what()
+                            << '\n';
 
                         close(
                             clientFd
@@ -507,10 +491,15 @@ void TcpServer::run() {
                     }
 
 
+                    // -----------------------------------------
+                    // Create per-client state
+                    // -----------------------------------------
+
                     pendingDataByClient.emplace(
                         clientFd,
                         std::string {}
                     );
+
 
                     clientNames.emplace(
                         clientFd,
@@ -551,8 +540,11 @@ void TcpServer::run() {
                 ];
 
 
-                // Because socket is non-blocking,
-                // read until EAGAIN.
+                // ---------------------------------------------
+                // Non-blocking socket:
+                // keep reading until EAGAIN
+                // ---------------------------------------------
+
                 while (true) {
 
                     const ssize_t bytesReceived =
@@ -566,7 +558,7 @@ void TcpServer::run() {
 
                     if (bytesReceived > 0) {
 
-                        auto pendingIt =
+                        const auto pendingIt =
                             pendingDataByClient.find(
                                 eventFd
                             );
@@ -613,7 +605,7 @@ void TcpServer::run() {
                         bytesReceived == 0
                     ) {
 
-                        // Peer performed orderly shutdown.
+                        // Remote peer closed normally.
                         shouldClose =
                             true;
 
@@ -630,7 +622,7 @@ void TcpServer::run() {
                         if (errno == EAGAIN ||
                             errno == EWOULDBLOCK) {
 
-                            // No more data for now.
+                            // Current socket buffer is drained.
                             break;
                         }
 
@@ -645,7 +637,7 @@ void TcpServer::run() {
 
 
             // -------------------------------------------------
-            // Client closed / socket error
+            // Connection closed or socket error
             // -------------------------------------------------
 
             if (eventFlags &
@@ -661,7 +653,7 @@ void TcpServer::run() {
 
 
             // -------------------------------------------------
-            // Remove disconnected client
+            // Cleanup disconnected client
             // -------------------------------------------------
 
             if (shouldClose) {
@@ -691,19 +683,31 @@ void TcpServer::run() {
                 }
 
 
-                epoll_ctl(
-                    epollFd,
-                    EPOLL_CTL_DEL,
-                    eventFd,
-                    nullptr
-                );
+                // First stop EventLoop monitoring this fd.
+                try {
+
+                    eventLoop.removeFd(
+                        eventFd
+                    );
+
+                } catch (
+                    const std::exception& e
+                ) {
+
+                    std::cerr
+                        << "Failed to remove client from EventLoop: "
+                        << e.what()
+                        << '\n';
+                }
 
 
+                // Then release the socket.
                 close(
                     eventFd
                 );
 
 
+                // Finally remove application state.
                 pendingDataByClient.erase(
                     eventFd
                 );
@@ -715,10 +719,4 @@ void TcpServer::run() {
             }
         }
     }
-
-
-    // 当前版本 while(true) 不会到这里。
-    close(
-        epollFd
-    );
 }
