@@ -31,6 +31,7 @@ add_executable(lmonitor_server
     src/reactor/Channel.cpp
 
     src/network/TcpConnection.cpp
+    src/reactor/Acceptor.cpp
 )
 
 target_include_directories(
