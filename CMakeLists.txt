@@ -18,7 +18,33 @@ add_executable(lmonitor_agent
     src/collector/DiskCollector.cpp
     src/collector/NetworkCollector.cpp
     src/collector/ProcessCollector.cpp
+    src/serializer/MetricsSerializer.cpp
+    src/network/TcpClient.cpp
+
 )
+
+add_executable(lmonitor_server
+    src/server_main.cpp
+    src/server/TcpServer.cpp
+    src/reactor/EventLoop.cpp
+    src/reactor/Channel.cpp
+)
+
+target_include_directories(
+    lmonitor_server
+    PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_compile_options(
+    lmonitor_server
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
+
 
 target_include_directories(
     lmonitor_agent
