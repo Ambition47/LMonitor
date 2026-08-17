@@ -26,8 +26,11 @@ add_executable(lmonitor_agent
 add_executable(lmonitor_server
     src/server_main.cpp
     src/server/TcpServer.cpp
+
     src/reactor/EventLoop.cpp
     src/reactor/Channel.cpp
+
+    src/network/TcpConnection.cpp
 )
 
 target_include_directories(
