@@ -1,5 +1,6 @@
 #include "server/TcpServer.h"
 
+#include "network/TcpConnection.h"
 #include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
 
@@ -21,7 +22,6 @@
 namespace {
 
 constexpr int MAX_EVENTS = 64;
-constexpr int BUFFER_SIZE = 4096;
 
 
 // ============================================================
@@ -44,6 +44,7 @@ void setNonBlocking(
         );
     }
 
+
     if (fcntl(
             fd,
             F_SETFL,
@@ -53,62 +54,6 @@ void setNonBlocking(
         throw std::runtime_error(
             "Failed to set socket non-blocking"
         );
-    }
-}
-
-
-// ============================================================
-// Parse complete LMonitor protocol messages
-// ============================================================
-
-void processMessages(
-    std::string& pendingData,
-    const std::string& clientName
-) {
-    const std::string delimiter =
-        "END\n";
-
-    while (true) {
-
-        const std::size_t delimiterPosition =
-            pendingData.find(
-                delimiter
-            );
-
-        if (delimiterPosition ==
-            std::string::npos) {
-
-            break;
-        }
-
-        const std::size_t messageLength =
-            delimiterPosition +
-            delimiter.size();
-
-        const std::string message =
-            pendingData.substr(
-                0,
-                messageLength
-            );
-
-        pendingData.erase(
-            0,
-            messageLength
-        );
-
-        std::cout
-            << "\n========== Metrics Received ==========\n";
-
-        std::cout
-            << "Client: "
-            << clientName
-            << '\n';
-
-        std::cout
-            << message;
-
-        std::cout
-            << "======================================\n";
     }
 }
 
@@ -124,12 +69,17 @@ TcpServer::TcpServer(
 )
     : port_(port) {
 
+    // --------------------------------------------------------
+    // Create TCP listening socket
+    // --------------------------------------------------------
+
     serverFd_ =
         socket(
             AF_INET,
             SOCK_STREAM,
             0
         );
+
 
     if (serverFd_ < 0) {
         throw std::runtime_error(
@@ -138,7 +88,12 @@ TcpServer::TcpServer(
     }
 
 
+    // --------------------------------------------------------
+    // Allow quick port reuse
+    // --------------------------------------------------------
+
     int reuse = 1;
+
 
     if (setsockopt(
             serverFd_,
@@ -148,8 +103,12 @@ TcpServer::TcpServer(
             sizeof(reuse)
         ) < 0) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
+
         serverFd_ = -1;
+
 
         throw std::runtime_error(
             "Failed to set SO_REUSEADDR"
@@ -157,19 +116,31 @@ TcpServer::TcpServer(
     }
 
 
+    // --------------------------------------------------------
+    // Listening socket must be non-blocking
+    // --------------------------------------------------------
+
     try {
+
         setNonBlocking(
             serverFd_
         );
 
     } catch (...) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
+
         serverFd_ = -1;
 
         throw;
     }
 
+
+    // --------------------------------------------------------
+    // Configure address
+    // --------------------------------------------------------
 
     sockaddr_in serverAddress {};
 
@@ -187,6 +158,10 @@ TcpServer::TcpServer(
         );
 
 
+    // --------------------------------------------------------
+    // Bind
+    // --------------------------------------------------------
+
     if (bind(
             serverFd_,
             reinterpret_cast<sockaddr*>(
@@ -195,8 +170,12 @@ TcpServer::TcpServer(
             sizeof(serverAddress)
         ) < 0) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
+
         serverFd_ = -1;
+
 
         throw std::runtime_error(
             "Failed to bind server socket"
@@ -204,13 +183,21 @@ TcpServer::TcpServer(
     }
 
 
+    // --------------------------------------------------------
+    // Listen
+    // --------------------------------------------------------
+
     if (listen(
             serverFd_,
             SOMAXCONN
         ) < 0) {
 
-        close(serverFd_);
+        close(
+            serverFd_
+        );
+
         serverFd_ = -1;
+
 
         throw std::runtime_error(
             "Failed to listen on server socket"
@@ -247,31 +234,19 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Client state
+    // Every active Agent corresponds to one TcpConnection
     // ========================================================
 
     std::unordered_map<
         int,
-        std::unique_ptr<Channel>
-    > clientChannels;
+        std::unique_ptr<TcpConnection>
+    > connections;
 
 
-    std::unordered_map<
-        int,
-        std::string
-    > pendingDataByClient;
-
-
-    std::unordered_map<
-        int,
-        std::string
-    > clientNames;
-
-
-    // callback 中不直接删除 Channel。
-    // 这里只记录本轮结束后需要清理的 fd。
+    // TcpConnection callback 不直接删除自己。
+    // 这里只记录本轮事件处理完成后需要关闭的 fd。
     std::unordered_set<int>
-        clientsToClose;
+        connectionsToClose;
 
 
     // ========================================================
@@ -282,13 +257,14 @@ void TcpServer::run() {
         serverFd_
     );
 
+
     serverChannel.setEvents(
         EPOLLIN
     );
 
 
     // ========================================================
-    // Accept callback
+    // New connection callback
     // ========================================================
 
     serverChannel.setReadCallback(
@@ -303,6 +279,10 @@ void TcpServer::run() {
                         clientAddress
                     );
 
+
+                // --------------------------------------------
+                // Accept new client as non-blocking socket
+                // --------------------------------------------
 
                 const int clientFd =
                     accept4(
@@ -326,7 +306,7 @@ void TcpServer::run() {
                     if (errno == EAGAIN ||
                         errno == EWOULDBLOCK) {
 
-                        // 当前所有待连接客户端都 accept 完了。
+                        // 当前积压队列中的连接已经全部 accept。
                         break;
                     }
 
@@ -339,7 +319,7 @@ void TcpServer::run() {
 
 
                 // --------------------------------------------
-                // Build readable client name
+                // Convert client IP to readable string
                 // --------------------------------------------
 
                 char clientIp[
@@ -377,213 +357,18 @@ void TcpServer::run() {
                     );
 
 
-                // ============================================
-                // Create Channel for this client
-                // ============================================
+                // --------------------------------------------
+                // Defensive duplicate-fd check
+                // --------------------------------------------
 
-                auto clientChannel =
-                    std::make_unique<Channel>(
+                if (connections.find(
                         clientFd
-                    );
-
-
-                clientChannel->setEvents(
-                    EPOLLIN |
-                    EPOLLRDHUP
-                );
-
-
-                // ============================================
-                // Read callback
-                // ============================================
-
-                clientChannel->setReadCallback(
-                    [&, clientFd]() {
-
-                        // 如果 error callback 已经把它标记为关闭，
-                        // 本轮不再继续读取。
-                        if (clientsToClose.find(
-                                clientFd
-                            ) != clientsToClose.end()) {
-
-                            return;
-                        }
-
-
-                        char buffer[
-                            BUFFER_SIZE
-                        ];
-
-
-                        while (true) {
-
-                            const ssize_t bytesReceived =
-                                recv(
-                                    clientFd,
-                                    buffer,
-                                    sizeof(buffer),
-                                    0
-                                );
-
-
-                            if (bytesReceived > 0) {
-
-                                const auto pendingIt =
-                                    pendingDataByClient.find(
-                                        clientFd
-                                    );
-
-
-                                if (pendingIt ==
-                                    pendingDataByClient.end()) {
-
-                                    clientsToClose.insert(
-                                        clientFd
-                                    );
-
-                                    return;
-                                }
-
-
-                                pendingIt->second.append(
-                                    buffer,
-                                    static_cast<std::size_t>(
-                                        bytesReceived
-                                    )
-                                );
-
-
-                                const auto nameIt =
-                                    clientNames.find(
-                                        clientFd
-                                    );
-
-
-                                const std::string currentClientName =
-                                    nameIt !=
-                                    clientNames.end()
-                                        ? nameIt->second
-                                        : "unknown";
-
-
-                                processMessages(
-                                    pendingIt->second,
-                                    currentClientName
-                                );
-
-
-                            } else if (
-                                bytesReceived == 0
-                            ) {
-
-                                // 对端正常关闭连接。
-                                clientsToClose.insert(
-                                    clientFd
-                                );
-
-                                return;
-
-
-                            } else {
-
-                                if (errno == EINTR) {
-                                    continue;
-                                }
-
-
-                                if (errno == EAGAIN ||
-                                    errno == EWOULDBLOCK) {
-
-                                    // 当前 Socket 数据已经读空。
-                                    return;
-                                }
-
-
-                                clientsToClose.insert(
-                                    clientFd
-                                );
-
-                                return;
-                            }
-                        }
-                    }
-                );
-
-
-                // ============================================
-                // Close callback
-                // ============================================
-
-                clientChannel->setCloseCallback(
-                    [&, clientFd]() {
-
-                        clientsToClose.insert(
-                            clientFd
-                        );
-                    }
-                );
-
-
-                // ============================================
-                // Error callback
-                // ============================================
-
-                clientChannel->setErrorCallback(
-                    [&, clientFd]() {
-
-                        std::cerr
-                            << "Socket error: fd="
-                            << clientFd
-                            << '\n';
-
-                        clientsToClose.insert(
-                            clientFd
-                        );
-                    }
-                );
-
-
-                // ============================================
-                // Store client application state
-                // ============================================
-
-                pendingDataByClient.emplace(
-                    clientFd,
-                    std::string {}
-                );
-
-
-                clientNames.emplace(
-                    clientFd,
-                    clientName
-                );
-
-
-                // Channel 必须先存下来，
-                // 确保其地址在注册到 epoll 后持续有效。
-                const auto insertResult =
-                    clientChannels.emplace(
-                        clientFd,
-                        std::move(
-                            clientChannel
-                        )
-                    );
-
-
-                if (!insertResult.second) {
+                    ) != connections.end()) {
 
                     std::cerr
                         << "Duplicate client fd: "
                         << clientFd
                         << '\n';
-
-                    pendingDataByClient.erase(
-                        clientFd
-                    );
-
-                    clientNames.erase(
-                        clientFd
-                    );
 
                     close(
                         clientFd
@@ -593,48 +378,120 @@ void TcpServer::run() {
                 }
 
 
-                Channel* channel =
-                    insertResult.first
-                        ->second
-                        .get();
-
-
                 // ============================================
-                // Register Channel with EventLoop
+                // Create TcpConnection
                 // ============================================
+
+                std::unique_ptr<TcpConnection>
+                    connection;
+
 
                 try {
 
-                    eventLoop.addChannel(
-                        channel
-                    );
+                    connection =
+                        std::make_unique<
+                            TcpConnection
+                        >(
+                            eventLoop,
+                            clientFd,
+                            clientName
+                        );
 
                 } catch (
                     const std::exception& e
                 ) {
 
                     std::cerr
-                        << "Failed to add client Channel: "
+                        << "Failed to create TcpConnection: "
                         << e.what()
                         << '\n';
 
 
-                    clientChannels.erase(
-                        clientFd
-                    );
-
-                    pendingDataByClient.erase(
-                        clientFd
-                    );
-
-                    clientNames.erase(
-                        clientFd
-                    );
-
+                    // 构造失败时 TcpConnection 没有成功取得所有权，
+                    // 所以这里由 TcpServer 关闭 fd。
                     close(
                         clientFd
                     );
 
+                    continue;
+                }
+
+
+                // ============================================
+                // Complete-message callback
+                // ============================================
+
+                connection->setMessageCallback(
+                    [](
+                        const std::string& name,
+                        const std::string& message
+                    ) {
+
+                        std::cout
+                            << "\n========== Metrics Received ==========\n";
+
+                        std::cout
+                            << "Client: "
+                            << name
+                            << '\n';
+
+                        std::cout
+                            << message;
+
+                        std::cout
+                            << "======================================\n";
+                    }
+                );
+
+
+                // ============================================
+                // Close request callback
+                // ============================================
+
+                connection->setCloseCallback(
+                    [&connectionsToClose](
+                        int fd
+                    ) {
+
+                        // 注意：
+                        // 这里不能直接 erase(connection)。
+                        //
+                        // 当前可能仍处于
+                        // Channel::handleEvent()
+                        // 或 TcpConnection::handleRead()
+                        // 调用栈中。
+                        //
+                        // 因此只做延迟关闭标记。
+                        connectionsToClose.insert(
+                            fd
+                        );
+                    }
+                );
+
+
+                // ============================================
+                // Store ownership
+                // ============================================
+
+                const auto result =
+                    connections.emplace(
+                        clientFd,
+                        std::move(
+                            connection
+                        )
+                    );
+
+
+                if (!result.second) {
+
+                    // 正常情况下不会发生。
+                    std::cerr
+                        << "Failed to store connection: fd="
+                        << clientFd
+                        << '\n';
+
+                    // connection 插入失败时，
+                    // unique_ptr 仍由临时对象管理并会析构。
                     continue;
                 }
 
@@ -650,7 +507,10 @@ void TcpServer::run() {
     );
 
 
-    // Listening socket error.
+    // ========================================================
+    // Listening socket error callback
+    // ========================================================
+
     serverChannel.setErrorCallback(
         [&]() {
 
@@ -682,106 +542,67 @@ void TcpServer::run() {
     while (true) {
 
         // ----------------------------------------------------
-        // epoll_wait + Channel callback dispatch
+        // epoll_wait
+        //     ↓
+        // EventLoop
+        //     ↓
+        // Channel
+        //     ↓
+        // Callback
         // ----------------------------------------------------
 
         eventLoop.loopOnce();
 
 
         // ====================================================
-        // Deferred client cleanup
+        // Deferred destruction
         // ====================================================
 
         for (const int clientFd :
-             clientsToClose) {
+             connectionsToClose) {
 
-            const auto channelIt =
-                clientChannels.find(
+            const auto connectionIt =
+                connections.find(
                     clientFd
                 );
 
 
-            if (channelIt ==
-                clientChannels.end()) {
+            if (connectionIt ==
+                connections.end()) {
 
                 continue;
             }
 
 
-            const auto nameIt =
-                clientNames.find(
-                    clientFd
-                );
+            std::cout
+                << "Client disconnected: "
+                << connectionIt
+                    ->second
+                    ->clientName()
+                << "  fd="
+                << clientFd
+                << '\n';
 
 
-            if (nameIt !=
-                clientNames.end()) {
-
-                std::cout
-                    << "Client disconnected: "
-                    << nameIt->second
-                    << "  fd="
-                    << clientFd
-                    << '\n';
-
-            } else {
-
-                std::cout
-                    << "Client disconnected: fd="
-                    << clientFd
-                    << '\n';
-            }
-
-
-            // -----------------------------------------------
-            // Correct destruction order:
+            // 这里不需要：
             //
-            // 1. remove from epoll
-            // 2. close socket
-            // 3. remove application state
-            // 4. destroy Channel
-            // -----------------------------------------------
-
-            try {
-
-                eventLoop.removeChannel(
-                    channelIt
-                        ->second
-                        .get()
-                );
-
-            } catch (
-                const std::exception& e
-            ) {
-
-                std::cerr
-                    << "Failed to remove Channel: "
-                    << e.what()
-                    << '\n';
-            }
-
-
-            close(
-                clientFd
-            );
-
-
-            pendingDataByClient.erase(
-                clientFd
-            );
-
-
-            clientNames.erase(
-                clientFd
-            );
-
-
-            clientChannels.erase(
-                channelIt
+            // eventLoop.removeChannel(...)
+            // close(clientFd)
+            //
+            // 因为 TcpConnection 析构函数会负责：
+            //
+            // removeChannel()
+            // close(fd)
+            //
+            // erase unique_ptr
+            //      ↓
+            // ~TcpConnection()
+            connections.erase(
+                connectionIt
             );
         }
 
 
-        clientsToClose.clear();
+        connectionsToClose.clear();
     }
 }
