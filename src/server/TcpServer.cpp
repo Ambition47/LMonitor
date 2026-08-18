@@ -2,14 +2,22 @@
 
 #include "network/TcpConnection.h"
 #include "reactor/Acceptor.h"
+#include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
 
 #include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <cerrno>
+#include <csignal>
+#include <stdexcept>
 
+
+
+#include <sys/epoll.h>
 #include <unistd.h>
+#include <sys/signalfd.h>
 
 
 namespace {
@@ -44,6 +52,153 @@ void TcpServer::run() {
     EventLoop eventLoop(
         MAX_EVENTS
     );
+
+
+    // ========================================================
+// Block SIGINT / SIGTERM.
+//
+// Signals will no longer invoke asynchronous signal
+// handlers. They will be received through signalfd instead.
+// ========================================================
+
+sigset_t signalMask;
+
+if (sigemptyset(
+        &signalMask
+    ) < 0) {
+
+    throw std::runtime_error(
+        "Failed to initialize signal mask"
+    );
+}
+
+
+if (sigaddset(
+        &signalMask,
+        SIGINT
+    ) < 0) {
+
+    throw std::runtime_error(
+        "Failed to add SIGINT to signal mask"
+    );
+}
+
+
+if (sigaddset(
+        &signalMask,
+        SIGTERM
+    ) < 0) {
+
+    throw std::runtime_error(
+        "Failed to add SIGTERM to signal mask"
+    );
+}
+
+
+if (sigprocmask(
+        SIG_BLOCK,
+        &signalMask,
+        nullptr
+    ) < 0) {
+
+    throw std::runtime_error(
+        "Failed to block server signals"
+    );
+}
+
+const int signalFd =
+    signalfd(
+        -1,
+        &signalMask,
+        SFD_NONBLOCK |
+        SFD_CLOEXEC
+    );
+
+
+if (signalFd < 0) {
+    throw std::runtime_error(
+        "Failed to create signalfd"
+    );
+}
+
+Channel signalChannel(
+    signalFd
+);
+
+
+signalChannel.setEvents(
+    EPOLLIN
+);
+
+signalChannel.setReadCallback(
+    [&eventLoop, signalFd]() {
+
+        while (true) {
+
+            signalfd_siginfo signalInfo {};
+
+            const ssize_t bytesRead =
+                read(
+                    signalFd,
+                    &signalInfo,
+                    sizeof(signalInfo)
+                );
+
+
+            if (bytesRead ==
+                static_cast<ssize_t>(
+                    sizeof(signalInfo)
+                )) {
+
+                if (signalInfo.ssi_signo ==
+                        SIGINT ||
+                    signalInfo.ssi_signo ==
+                        SIGTERM) {
+
+                    std::cout
+                        << "\nShutdown signal received. "
+                        << "Stopping Reactor Server...\n";
+
+
+                    eventLoop.quit();
+
+                    return;
+                }
+
+
+                continue;
+            }
+
+
+            if (bytesRead < 0) {
+
+                if (errno == EINTR) {
+                    continue;
+                }
+
+
+                if (errno == EAGAIN ||
+                    errno == EWOULDBLOCK) {
+
+                    return;
+                }
+
+
+                std::cerr
+                    << "Failed to read signalfd\n";
+
+                return;
+            }
+
+
+            return;
+        }
+    }
+);
+
+eventLoop.addChannel(
+    &signalChannel
+);
 
 
     // ========================================================
@@ -276,4 +431,24 @@ void TcpServer::run() {
     // ========================================================
 
     eventLoop.loop();
+
+
+// ========================================================
+// Reactor has stopped.
+//
+// Remove signal Channel before closing its fd.
+// ========================================================
+
+eventLoop.removeChannel(
+    &signalChannel
+);
+
+
+close(
+    signalFd
+);
+
+
+std::cout
+    << "LMonitor Reactor Server stopped gracefully.\n";
 }
