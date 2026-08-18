@@ -5,9 +5,15 @@
 #include <cerrno>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <unistd.h>
 
+
+// ============================================================
+// Constructor
+// ============================================================
 
 EventLoop::EventLoop(
     int maxEvents
@@ -40,6 +46,10 @@ EventLoop::EventLoop(
 }
 
 
+// ============================================================
+// Destructor
+// ============================================================
+
 EventLoop::~EventLoop() {
     if (epollFd_ >= 0) {
 
@@ -71,9 +81,6 @@ void EventLoop::addChannel(
     event.events =
         channel->events();
 
-
-    // 这里不再保存 fd，
-    // 而是直接保存 Channel 指针。
     event.data.ptr =
         channel;
 
@@ -159,6 +166,11 @@ void EventLoop::removeChannel(
     }
 }
 
+
+// ============================================================
+// Main Reactor loop
+// ============================================================
+
 void EventLoop::loop() {
     if (looping_) {
         throw std::runtime_error(
@@ -166,27 +178,92 @@ void EventLoop::loop() {
         );
     }
 
-    looping_ = true;
-    quit_ = false;
+
+    looping_ =
+        true;
+
+    quit_ =
+        false;
+
 
     while (!quit_) {
+
         loopOnce();
     }
 
-    looping_ = false;
+
+    looping_ =
+        false;
 }
-
-
-void EventLoop::quit() {
-    quit_ = true;
-}
-
-
-
 
 
 // ============================================================
-// Wait once and dispatch events
+// Request shutdown
+// ============================================================
+
+void EventLoop::quit() {
+    quit_ =
+        true;
+}
+
+
+// ============================================================
+// Queue deferred task
+// ============================================================
+
+void EventLoop::queueInLoop(
+    Functor functor
+) {
+    if (!functor) {
+        return;
+    }
+
+
+    pendingFunctors_.push_back(
+        std::move(
+            functor
+        )
+    );
+}
+
+
+// ============================================================
+// Execute deferred tasks
+// ============================================================
+
+void EventLoop::doPendingFunctors() {
+
+    // 非常重要：
+    //
+    // 先把当前待执行任务移动到临时 vector。
+    //
+    // 因为某个 functor 在执行过程中，
+    // 可能再次调用 queueInLoop()。
+    //
+    // 新加入的任务应该留到下一轮执行，
+    // 而不是修改当前正在遍历的 vector。
+
+    std::vector<Functor>
+        functors;
+
+
+    functors.swap(
+        pendingFunctors_
+    );
+
+
+    for (auto& functor :
+         functors) {
+
+        if (functor) {
+            functor();
+        }
+    }
+}
+
+
+// ============================================================
+// Run one epoll iteration
 // ============================================================
 
 void EventLoop::loopOnce(
@@ -225,7 +302,7 @@ void EventLoop::loopOnce(
 
 
     // ========================================================
-    // Dispatch ready events directly to Channel
+    // Dispatch events
     // ========================================================
 
     for (int i = 0;
@@ -255,4 +332,20 @@ void EventLoop::loopOnce(
             event.events
         );
     }
+
+
+    // ========================================================
+    // Important:
+    //
+    // 所有 Channel callback 全部处理完以后，
+    // 才执行延迟任务。
+    //
+    // 因此这里可以安全进行类似：
+    //
+    // connections.erase(fd)
+    //
+    // 的操作。
+    // ========================================================
+
+    doPendingFunctors();
 }
