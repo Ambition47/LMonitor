@@ -42,6 +42,15 @@ public:
     );
 
 
+    // 执行完整 Reactor 循环
+    void loop();
+
+
+    // 请求退出 Reactor 循环
+    void quit();
+
+
+    // 执行一次 epoll_wait + 事件分发
     void loopOnce(
         int timeoutMilliseconds = -1
     );
@@ -51,6 +60,10 @@ private:
     int epollFd_ = -1;
 
     std::vector<epoll_event> events_;
+
+    bool looping_ = false;
+
+    bool quit_ = false;
 };
 
 #endif

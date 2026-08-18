@@ -159,6 +159,31 @@ void EventLoop::removeChannel(
     }
 }
 
+void EventLoop::loop() {
+    if (looping_) {
+        throw std::runtime_error(
+            "EventLoop is already running"
+        );
+    }
+
+    looping_ = true;
+    quit_ = false;
+
+    while (!quit_) {
+        loopOnce();
+    }
+
+    looping_ = false;
+}
+
+
+void EventLoop::quit() {
+    quit_ = true;
+}
+
+
+
+
 
 // ============================================================
 // Wait once and dispatch events
