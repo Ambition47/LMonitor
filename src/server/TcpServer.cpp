@@ -1,7 +1,6 @@
 #include "server/TcpServer.h"
 #include "thread/ThreadPool.h"
 
-
 #include "network/TcpConnection.h"
 #include "reactor/Acceptor.h"
 #include "reactor/Channel.h"
@@ -16,7 +15,7 @@
 #include <csignal>
 #include <stdexcept>
 
-
+#include <thread>
 
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -56,6 +55,14 @@ void TcpServer::run() {
         MAX_EVENTS
     );
 
+    const std::thread::id eventLoopThreadId =
+    std::this_thread::get_id();
+
+
+std::cout
+    << "[Reactor] EventLoop thread id: "
+    << eventLoopThreadId
+    << '\n';
 
     constexpr std::size_t WORKER_THREAD_COUNT =
     4;
@@ -316,11 +323,29 @@ eventLoop.addChannel(
 
      
 	    connection->setMessageCallback(
-    [&threadPool, &eventLoop](
+    [
+        &threadPool,
+        &eventLoop,
+        eventLoopThreadId
+    ](
         const std::string& name,
         const std::string& message
     ) {
 
+
+
+
+
+    const std::thread::id currentThreadId =
+            std::this_thread::get_id();
+
+
+        std::cout
+            << "[I/O] Message received on thread: "
+            << currentThreadId
+            << "  EventLoop thread: "
+            << eventLoopThreadId
+            << '\n';
         // ====================================================
         // Important:
         //
@@ -341,8 +366,18 @@ eventLoop.addChannel(
             [
                 &eventLoop,
                 clientName,
-                metricsMessage
+                metricsMessage,
+		eventLoopThreadId
             ]() {
+
+	    const std::thread::id workerThreadId =
+            std::this_thread::get_id();
+
+
+        std::cout
+            << "[Worker] Processing metrics on thread: "
+            << workerThreadId
+            << '\n';
 
                 // ============================================
                 // Worker Thread
@@ -383,8 +418,23 @@ eventLoop.addChannel(
                         clientName,
                         metricsMessage,
                         messageBytes,
-                        lineCount
+                        lineCount,
+			workerThreadId,
+                       eventLoopThreadId
                     ]() {
+
+		    const std::thread::id callbackThreadId =
+    std::this_thread::get_id();
+
+
+std::cout
+    << "[Reactor Callback] thread: "
+    << callbackThreadId
+    << "  worker was: "
+    << workerThreadId
+    << "  expected EventLoop: "
+    << eventLoopThreadId
+    << '\n';
 
                         std::cout
                             << "\n"
