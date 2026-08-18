@@ -602,6 +602,24 @@ void MonitorAgent::run(
         sampleInterval;
 
 
+
+
+
+
+    std::chrono::seconds reconnectDelay(
+    1
+);
+
+const std::chrono::seconds maxReconnectDelay(
+    30
+);
+
+auto nextReconnectTime =
+    std::chrono::steady_clock::now();
+
+
+
+
     // ========================================================
     // Monitoring loop
     // ========================================================
@@ -752,19 +770,48 @@ void MonitorAgent::run(
     FrameCodec::encode(
         serializedMetrics
     );
-      
-	if (!tcpClient_.isConnected()) {
+ 
+
+	const auto reconnectNow =
+    std::chrono::steady_clock::now();
+
+
+if (!tcpClient_.isConnected() &&
+    reconnectNow >= nextReconnectTime) {
 
     std::cout
         << "Connecting to monitoring server...\n";
 
 
-    if (!tcpClient_.connectToServer()) {
+    if (tcpClient_.connectToServer()) {
+
+        reconnectDelay =
+            std::chrono::seconds(
+                1
+            );
+
+        nextReconnectTime =
+            reconnectNow;
+
+    } else {
 
         std::cerr
             << "Unable to connect to monitoring server. "
-            << "Will retry on the next sample.\n";
+            << "Retrying in "
+            << reconnectDelay.count()
+            << " second(s).\n";
 
+
+        nextReconnectTime =
+            reconnectNow +
+            reconnectDelay;
+
+
+        reconnectDelay =
+            std::min(
+                reconnectDelay * 2,
+                maxReconnectDelay
+            );
     }
 }
 
@@ -777,8 +824,18 @@ if (tcpClient_.isConnected()) {
 
         std::cerr
             << "Failed to send metrics. "
-            << "Connection will be retried "
-            << "on the next sample.\n";
+            << "The connection will be retried.\n";
+
+
+        reconnectDelay =
+            std::chrono::seconds(
+                1
+            );
+
+
+        nextReconnectTime =
+            std::chrono::steady_clock::now() +
+            reconnectDelay;
     }
 }
 
