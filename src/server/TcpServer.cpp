@@ -1,10 +1,13 @@
 #include "server/TcpServer.h"
+#include "thread/ThreadPool.h"
+
 
 #include "network/TcpConnection.h"
 #include "reactor/Acceptor.h"
 #include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -53,6 +56,20 @@ void TcpServer::run() {
         MAX_EVENTS
     );
 
+
+    constexpr std::size_t WORKER_THREAD_COUNT =
+    4;
+
+
+ThreadPool threadPool(
+    WORKER_THREAD_COUNT
+);
+
+
+std::cout
+    << "Worker thread pool started with "
+    << threadPool.threadCount()
+    << " threads.\n";
 
     // ========================================================
 // Block SIGINT / SIGTERM.
@@ -297,29 +314,112 @@ eventLoop.addChannel(
             // Complete message callback
             // =================================================
 
-            connection->setMessageCallback(
-                [](
-                    const std::string& name,
-                    const std::string& message
-                ) {
+     
+	    connection->setMessageCallback(
+    [&threadPool, &eventLoop](
+        const std::string& name,
+        const std::string& message
+    ) {
 
-                    std::cout
-                        << "\n"
-                        << "========== Metrics Received ==========\n";
+        // ====================================================
+        // Important:
+        //
+        // TcpConnection callback runs in EventLoop thread.
+        //
+        // Copy name/message into the worker task so that
+        // the worker does not depend on TcpConnection lifetime.
+        // ====================================================
 
-                    std::cout
-                        << "Client: "
-                        << name
-                        << '\n';
+        const std::string clientName =
+            name;
 
-                    std::cout
-                        << message;
+        const std::string metricsMessage =
+            message;
 
-                    std::cout
-                        << "======================================\n";
-                }
-            );
 
+        threadPool.submit(
+            [
+                &eventLoop,
+                clientName,
+                metricsMessage
+            ]() {
+
+                // ============================================
+                // Worker Thread
+                //
+                // For now perform a small piece of processing:
+                //
+                // 1. count bytes
+                // 2. count lines
+                //
+                // Later this location can perform:
+                //
+                // protocol parsing
+                // aggregation
+                // database persistence
+                // alert calculation
+                // ============================================
+
+                const std::size_t messageBytes =
+                    metricsMessage.size();
+
+
+                const std::size_t lineCount =
+                    static_cast<std::size_t>(
+                        std::count(
+                            metricsMessage.begin(),
+                            metricsMessage.end(),
+                            '\n'
+                        )
+                    );
+
+
+                // ============================================
+                // Return result to EventLoop thread
+                // ============================================
+
+                eventLoop.queueInLoop(
+                    [
+                        clientName,
+                        metricsMessage,
+                        messageBytes,
+                        lineCount
+                    ]() {
+
+                        std::cout
+                            << "\n"
+                            << "========== Metrics Processed ==========\n";
+
+                        std::cout
+                            << "Client: "
+                            << clientName
+                            << '\n';
+
+
+                        std::cout
+                            << "Message bytes: "
+                            << messageBytes
+                            << '\n';
+
+
+                        std::cout
+                            << "Message lines: "
+                            << lineCount
+                            << '\n';
+
+
+                        std::cout
+                            << metricsMessage;
+
+
+                        std::cout
+                            << "=======================================\n";
+                    }
+                );
+            }
+        );
+    }
+);
 
             // =================================================
             // Close callback
