@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(LMonitor LANGUAGES CXX)
 
+find_package(Threads REQUIRED)
 
 # ============================================================
 # C++ standard
@@ -178,4 +179,5 @@ target_link_libraries(
     PRIVATE
         lmonitor_common
         lmonitor_build_options
+	Threads::Threads
 )

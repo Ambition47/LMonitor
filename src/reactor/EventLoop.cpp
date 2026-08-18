@@ -4,10 +4,13 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
+#include <sys/eventfd.h>
 #include <unistd.h>
 
 
@@ -24,6 +27,10 @@ EventLoop::EventLoop(
         );
     }
 
+
+    // --------------------------------------------------------
+    // Create epoll instance
+    // --------------------------------------------------------
 
     epollFd_ =
         epoll_create1(
@@ -43,6 +50,84 @@ EventLoop::EventLoop(
             maxEvents
         )
     );
+
+
+    // --------------------------------------------------------
+    // Create eventfd used to wake epoll_wait()
+    // --------------------------------------------------------
+
+    wakeupFd_ =
+        eventfd(
+            0,
+            EFD_NONBLOCK |
+            EFD_CLOEXEC
+        );
+
+
+    if (wakeupFd_ < 0) {
+
+        close(
+            epollFd_
+        );
+
+        epollFd_ = -1;
+
+
+        throw std::runtime_error(
+            "Failed to create EventLoop eventfd"
+        );
+    }
+
+
+    try {
+
+        // ----------------------------------------------------
+        // Treat eventfd exactly like other Reactor fds.
+        // ----------------------------------------------------
+
+        wakeupChannel_ =
+            std::make_unique<Channel>(
+                wakeupFd_
+            );
+
+
+        wakeupChannel_->setEvents(
+            EPOLLIN
+        );
+
+
+        wakeupChannel_->setReadCallback(
+            [this]() {
+                handleWakeup();
+            }
+        );
+
+
+        addChannel(
+            wakeupChannel_.get()
+        );
+
+    } catch (...) {
+
+        wakeupChannel_.reset();
+
+
+        close(
+            wakeupFd_
+        );
+
+        wakeupFd_ = -1;
+
+
+        close(
+            epollFd_
+        );
+
+        epollFd_ = -1;
+
+
+        throw;
+    }
 }
 
 
@@ -51,6 +136,38 @@ EventLoop::EventLoop(
 // ============================================================
 
 EventLoop::~EventLoop() {
+
+    // --------------------------------------------------------
+    // Remove wakeup Channel before destroying eventfd.
+    // --------------------------------------------------------
+
+    if (wakeupChannel_) {
+
+        try {
+
+            removeChannel(
+                wakeupChannel_.get()
+            );
+
+        } catch (...) {
+            // Destructor must not throw.
+        }
+
+
+        wakeupChannel_.reset();
+    }
+
+
+    if (wakeupFd_ >= 0) {
+
+        close(
+            wakeupFd_
+        );
+
+        wakeupFd_ = -1;
+    }
+
+
     if (epollFd_ >= 0) {
 
         close(
@@ -182,13 +299,25 @@ void EventLoop::loop() {
     looping_ =
         true;
 
-    quit_ =
-        false;
+
+    quit_.store(
+        false
+    );
 
 
-    while (!quit_) {
+    try {
 
-        loopOnce();
+        while (!quit_.load()) {
+
+            loopOnce();
+        }
+
+    } catch (...) {
+
+        looping_ =
+            false;
+
+        throw;
     }
 
 
@@ -202,13 +331,22 @@ void EventLoop::loop() {
 // ============================================================
 
 void EventLoop::quit() {
-    quit_ =
-        true;
+
+    quit_.store(
+        true
+    );
+
+
+    // epoll_wait() may currently be blocked forever.
+    //
+    // Writing to eventfd makes wakeupFd_ readable,
+    // causing epoll_wait() to return immediately.
+    wakeup();
 }
 
 
 // ============================================================
-// Queue deferred task
+// Queue task
 // ============================================================
 
 void EventLoop::queueInLoop(
@@ -219,11 +357,145 @@ void EventLoop::queueInLoop(
     }
 
 
-    pendingFunctors_.push_back(
-        std::move(
-            functor
-        )
-    );
+    // --------------------------------------------------------
+    // pendingFunctors_ may now be accessed by:
+    //
+    // EventLoop thread
+    // Worker thread
+    //
+    // so it must be protected.
+    // --------------------------------------------------------
+
+    {
+        std::lock_guard<std::mutex>
+            lock(
+                pendingFunctorsMutex_
+            );
+
+
+        pendingFunctors_.push_back(
+            std::move(
+                functor
+            )
+        );
+    }
+
+
+    // --------------------------------------------------------
+    // Wake Reactor.
+    //
+    // Even if epoll_wait() currently has no network event,
+    // the newly queued task will be processed promptly.
+    // --------------------------------------------------------
+
+    wakeup();
+}
+
+
+// ============================================================
+// Wake EventLoop through eventfd
+// ============================================================
+
+void EventLoop::wakeup() {
+
+    const uint64_t value =
+        1;
+
+
+    while (true) {
+
+        const ssize_t bytesWritten =
+            write(
+                wakeupFd_,
+                &value,
+                sizeof(value)
+            );
+
+
+        if (bytesWritten ==
+            static_cast<ssize_t>(
+                sizeof(value)
+            )) {
+
+            return;
+        }
+
+
+        if (bytesWritten < 0 &&
+            errno == EINTR) {
+
+            continue;
+        }
+
+
+        // eventfd counter is already full.
+        //
+        // In practice this is extraordinarily unlikely.
+        // More importantly, the fd is already readable,
+        // so the EventLoop is already going to wake up.
+        if (bytesWritten < 0 &&
+            errno == EAGAIN) {
+
+            return;
+        }
+
+
+        std::cerr
+            << "Failed to wake EventLoop through eventfd\n";
+
+        return;
+    }
+}
+
+
+// ============================================================
+// Consume eventfd notification
+// ============================================================
+
+void EventLoop::handleWakeup() {
+
+    uint64_t value =
+        0;
+
+
+    while (true) {
+
+        const ssize_t bytesRead =
+            read(
+                wakeupFd_,
+                &value,
+                sizeof(value)
+            );
+
+
+        if (bytesRead ==
+            static_cast<ssize_t>(
+                sizeof(value)
+            )) {
+
+            return;
+        }
+
+
+        if (bytesRead < 0 &&
+            errno == EINTR) {
+
+            continue;
+        }
+
+
+        if (bytesRead < 0 &&
+            errno == EAGAIN) {
+
+            return;
+        }
+
+
+        std::cerr
+            << "Failed to read EventLoop eventfd\n";
+
+        return;
+    }
 }
 
 
@@ -233,23 +505,27 @@ void EventLoop::queueInLoop(
 
 void EventLoop::doPendingFunctors() {
 
-    // 非常重要：
-    //
-    // 先把当前待执行任务移动到临时 vector。
-    //
-    // 因为某个 functor 在执行过程中，
-    // 可能再次调用 queueInLoop()。
-    //
-    // 新加入的任务应该留到下一轮执行，
-    // 而不是修改当前正在遍历的 vector。
-
     std::vector<Functor>
         functors;
 
 
-    functors.swap(
-        pendingFunctors_
-    );
+    // --------------------------------------------------------
+    // Only hold mutex while swapping containers.
+    //
+    // Never execute user callback while holding the mutex.
+    // --------------------------------------------------------
+
+    {
+        std::lock_guard<std::mutex>
+            lock(
+                pendingFunctorsMutex_
+            );
+
+
+        functors.swap(
+            pendingFunctors_
+        );
+    }
 
 
     for (auto& functor :
@@ -269,7 +545,8 @@ void EventLoop::doPendingFunctors() {
 void EventLoop::loopOnce(
     int timeoutMilliseconds
 ) {
-    int readyCount = 0;
+    int readyCount =
+        0;
 
 
     while (true) {
@@ -302,7 +579,7 @@ void EventLoop::loopOnce(
 
 
     // ========================================================
-    // Dispatch events
+    // Dispatch all ready Channels
     // ========================================================
 
     for (int i = 0;
@@ -335,16 +612,7 @@ void EventLoop::loopOnce(
 
 
     // ========================================================
-    // Important:
-    //
-    // 所有 Channel callback 全部处理完以后，
-    // 才执行延迟任务。
-    //
-    // 因此这里可以安全进行类似：
-    //
-    // connections.erase(fd)
-    //
-    // 的操作。
+    // Execute tasks only after Channel callbacks finish.
     // ========================================================
 
     doPendingFunctors();

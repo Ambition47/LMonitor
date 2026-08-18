@@ -1,7 +1,10 @@
 #ifndef LMONITOR_EVENT_LOOP_H
 #define LMONITOR_EVENT_LOOP_H
 
+#include <atomic>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 #include <sys/epoll.h>
@@ -47,30 +50,36 @@ public:
     );
 
 
-    // 进入完整 Reactor 循环
+    // Run complete Reactor loop.
     void loop();
 
 
-    // 请求退出 Reactor
+    // Request Reactor shutdown.
+    // This can wake epoll_wait().
     void quit();
 
 
-    // 执行一轮 epoll_wait + 事件分发
+    // Run one epoll iteration.
     void loopOnce(
         int timeoutMilliseconds = -1
     );
 
 
-    // 将任务加入 EventLoop，
-    // 在当前这一轮事件分发结束后执行
+    // Queue a task for EventLoop.
+    //
+    // This function is now protected by a mutex
+    // and wakes the EventLoop through eventfd.
     void queueInLoop(
         Functor functor
     );
 
 
 private:
-    // 执行所有延迟任务
     void doPendingFunctors();
+
+    void wakeup();
+
+    void handleWakeup();
 
 
 private:
@@ -78,14 +87,36 @@ private:
 
     std::vector<epoll_event> events_;
 
+
+    // ========================================================
+    // EventLoop lifecycle
+    // ========================================================
+
     bool looping_ = false;
 
-    bool quit_ = false;
+    std::atomic<bool> quit_ {
+        false
+    };
 
 
-    // 等待本轮事件处理结束后执行的任务
+    // ========================================================
+    // Pending functors
+    // ========================================================
+
+    std::mutex pendingFunctorsMutex_;
+
     std::vector<Functor>
         pendingFunctors_;
+
+
+    // ========================================================
+    // eventfd wakeup mechanism
+    // ========================================================
+
+    int wakeupFd_ = -1;
+
+    std::unique_ptr<Channel>
+        wakeupChannel_;
 };
 
 #endif
