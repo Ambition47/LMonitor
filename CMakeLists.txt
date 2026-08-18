@@ -170,6 +170,10 @@ add_executable(
     # --------------------------------------------------------
 
     src/network/TcpConnection.cpp
+
+    ## Thread pool
+    src/thread/ThreadPool.cpp
+
 )
 
 
