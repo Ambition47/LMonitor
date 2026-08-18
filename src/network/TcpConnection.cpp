@@ -1,6 +1,8 @@
 #include "network/TcpConnection.h"
+#include "protocol/FrameCodec.h"
 
 #include <cerrno>
+#include <exception>
 #include <iostream>
 #include <utility>
 
@@ -14,8 +16,6 @@ namespace {
 constexpr std::size_t BUFFER_SIZE =
     4096;
 
-const std::string MESSAGE_DELIMITER =
-    "END\n";
 
 }  // namespace
 
@@ -226,39 +226,55 @@ void TcpConnection::handleError() {
 // ============================================================
 
 void TcpConnection::processPendingData() {
+
     while (true) {
 
-        const std::size_t delimiterPosition =
-            pendingData_.find(
-                MESSAGE_DELIMITER
-            );
+        std::string message;
 
 
-        if (delimiterPosition ==
-            std::string::npos) {
+        try {
 
-            // 还没有收到完整消息
+            // 尝试从 TCP 字节流缓存中
+            // 解析出一条完整 length-prefixed frame。
+            //
+            // false:
+            //     当前数据还不够一整帧
+            //
+            // true:
+            //     成功解析出一整帧
+            if (!FrameCodec::tryDecode(
+                    pendingData_,
+                    message
+                )) {
+
+                return;
+            }
+
+        } catch (
+            const std::exception& e
+        ) {
+
+            // 非法长度等协议错误。
+            //
+            // 例如客户端声称下一帧有 100MB，
+            // 超过 FrameCodec::MAX_FRAME_SIZE。
+            std::cerr
+                << "Invalid frame from "
+                << clientName_
+                << ": "
+                << e.what()
+                << '\n';
+
+
+            requestClose();
+
             return;
         }
 
 
-        const std::size_t messageLength =
-            delimiterPosition +
-            MESSAGE_DELIMITER.size();
-
-
-        const std::string message =
-            pendingData_.substr(
-                0,
-                messageLength
-            );
-
-
-        pendingData_.erase(
-            0,
-            messageLength
-        );
-
+        // ----------------------------------------------------
+        // One complete payload has been decoded.
+        // ----------------------------------------------------
 
         if (messageCallback_) {
 

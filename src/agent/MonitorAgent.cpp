@@ -1,4 +1,6 @@
 #include "agent/MonitorAgent.h"
+#include "serializer/MetricsSerializer.h"
+#include "protocol/FrameCodec.h"
 
 #include <algorithm>
 #include <chrono>
@@ -746,6 +748,10 @@ void MonitorAgent::run(
     metricsSerializer_.serialize(
         metrics
     );
+	const std::string framedMetrics =
+    FrameCodec::encode(
+        serializedMetrics
+    );
       
 	if (!tcpClient_.isConnected()) {
 
@@ -766,7 +772,7 @@ void MonitorAgent::run(
 if (tcpClient_.isConnected()) {
 
     if (!tcpClient_.sendAll(
-            serializedMetrics
+            framedMetrics
         )) {
 
         std::cerr
