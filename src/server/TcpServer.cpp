@@ -8,9 +8,9 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 
 #include <unistd.h>
+
 
 namespace {
 
@@ -38,7 +38,7 @@ TcpServer::TcpServer(
 void TcpServer::run() {
 
     // ========================================================
-    // Reactor event loop
+    // Reactor EventLoop
     // ========================================================
 
     EventLoop eventLoop(
@@ -47,7 +47,7 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Active TCP connections
+    // Active connections
     //
     // fd -> TcpConnection
     // ========================================================
@@ -59,25 +59,7 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Deferred close queue
-    //
-    // TcpConnection 的 callback 中不能立即销毁自己，
-    // 所以先记录 fd。
-    // ========================================================
-
-    std::unordered_set<int>
-        connectionsToClose;
-
-
-    // ========================================================
     // Acceptor
-    //
-    // Acceptor 自己负责：
-    //
-    // socket()
-    // bind()
-    // listen()
-    // accept4()
     // ========================================================
 
     Acceptor acceptor(
@@ -97,7 +79,7 @@ void TcpServer::run() {
         ) {
 
             // ------------------------------------------------
-            // Defensive check
+            // Defensive duplicate check
             // ------------------------------------------------
 
             if (connections.find(
@@ -108,6 +90,10 @@ void TcpServer::run() {
                     << "Duplicate connection fd: "
                     << clientFd
                     << '\n';
+
+                close(
+                    clientFd
+                );
 
                 return;
             }
@@ -141,14 +127,9 @@ void TcpServer::run() {
                     << e.what()
                     << '\n';
 
-                // 注意：
-                //
-                // 如果 TcpConnection 构造失败，
-                // clientFd 仍然由上层负责关闭。
-                //
-                // 当前 Acceptor 已经把 fd 交给 callback，
-                // 所以这里必须关闭。
-                //
+
+                // TcpConnection 构造失败，
+                // fd 所有权尚未成功交给连接对象。
                 close(
                     clientFd
                 );
@@ -158,7 +139,7 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Complete metrics message callback
+            // Complete message callback
             // =================================================
 
             connection->setMessageCallback(
@@ -186,33 +167,70 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Close request callback
+            // Close callback
+            //
+            // 不立即 erase TcpConnection。
+            //
+            // 当前可能仍在：
+            //
+            // TcpConnection::handleRead()
+            // Channel::handleEvent()
+            //
+            // 所以把删除操作放进 EventLoop 延迟任务队列。
             // =================================================
 
             connection->setCloseCallback(
-                [&connectionsToClose](
+                [&eventLoop, &connections](
                     int fd
                 ) {
 
-                    // TcpConnection 可能正在执行：
-                    //
-                    // handleRead()
-                    // Channel::handleEvent()
-                    //
-                    // 所以这里不能：
-                    //
-                    // connections.erase(fd)
-                    //
-                    // 只进行延迟销毁标记。
-                    connectionsToClose.insert(
-                        fd
+                    eventLoop.queueInLoop(
+                        [&connections, fd]() {
+
+                            const auto connectionIt =
+                                connections.find(
+                                    fd
+                                );
+
+
+                            if (connectionIt ==
+                                connections.end()) {
+
+                                return;
+                            }
+
+
+                            std::cout
+                                << "Client disconnected: "
+                                << connectionIt
+                                    ->second
+                                    ->clientName()
+                                << "  fd="
+                                << fd
+                                << '\n';
+
+
+                            // --------------------------------
+                            // erase unique_ptr
+                            //       ↓
+                            // ~TcpConnection()
+                            //       ↓
+                            // removeChannel()
+                            //       ↓
+                            // close(fd)
+                            // --------------------------------
+
+                            connections.erase(
+                                connectionIt
+                            );
+                        }
                     );
                 }
             );
 
 
             // =================================================
-            // Store connection ownership
+            // Store ownership
             // =================================================
 
             const auto result =
@@ -252,70 +270,10 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Main Reactor loop
+    // Start Reactor
+    //
+    // EventLoop now owns the main loop.
     // ========================================================
 
-    while (true) {
-
-        // ----------------------------------------------------
-        // epoll_wait()
-        //
-        // EventLoop
-        //     ↓
-        // Channel
-        //     ↓
-        // Callback
-        // ----------------------------------------------------
-
-        eventLoop.loopOnce();
-
-
-        // ====================================================
-        // Deferred connection cleanup
-        // ====================================================
-
-        for (const int clientFd :
-             connectionsToClose) {
-
-            const auto connectionIt =
-                connections.find(
-                    clientFd
-                );
-
-
-            if (connectionIt ==
-                connections.end()) {
-
-                continue;
-            }
-
-
-            std::cout
-                << "Client disconnected: "
-                << connectionIt
-                    ->second
-                    ->clientName()
-                << "  fd="
-                << clientFd
-                << '\n';
-
-
-            // ------------------------------------------------
-            // erase unique_ptr
-            //       ↓
-            // ~TcpConnection()
-            //       ↓
-            // EventLoop::removeChannel()
-            //       ↓
-            // close(fd)
-            // ------------------------------------------------
-
-            connections.erase(
-                connectionIt
-            );
-        }
-
-
-        connectionsToClose.clear();
-    }
+    eventLoop.loop();
 }
