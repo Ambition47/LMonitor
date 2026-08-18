@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -19,8 +18,15 @@
 // ============================================================
 
 MonitorAgent::MonitorAgent(
-    double intervalSeconds
-) {
+    double intervalSeconds,
+    const std::string& serverIp,
+    uint16_t serverPort
+)
+    : tcpClient_(
+          serverIp,
+          serverPort
+      ) {
+
     // 自动检测默认网络接口
     networkInterface_ =
         networkCollector_.detectDefaultInterface();
@@ -740,21 +746,35 @@ void MonitorAgent::run(
     metricsSerializer_.serialize(
         metrics
     );
-       //临时写入文件，验证网络发送前的数据格式
-std::ofstream metricsFile(
-    "/tmp/lmonitor_metrics.txt",
-    std::ios::trunc
-);
+      
+	if (!tcpClient_.isConnected()) {
 
-if (!metricsFile.is_open()) {
-    throw std::runtime_error(
-        "Failed to open /tmp/lmonitor_metrics.txt"
-    );
+    std::cout
+        << "Connecting to monitoring server...\n";
+
+
+    if (!tcpClient_.connectToServer()) {
+
+        std::cerr
+            << "Unable to connect to monitoring server. "
+            << "Will retry on the next sample.\n";
+
+    }
 }
 
-metricsFile
-    << serializedMetrics;
 
+if (tcpClient_.isConnected()) {
+
+    if (!tcpClient_.sendAll(
+            serializedMetrics
+        )) {
+
+        std::cerr
+            << "Failed to send metrics. "
+            << "Connection will be retried "
+            << "on the next sample.\n";
+    }
+}
 
         // ----------------------------------------------------
         // Current snapshot becomes previous snapshot
