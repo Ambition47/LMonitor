@@ -6,6 +6,28 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ============================================================
+# Common library
+# ============================================================
+
+add_library(lmonitor_common STATIC
+    src/protocol/FrameCodec.cpp
+)
+
+target_include_directories(lmonitor_common
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+target_compile_options(lmonitor_common
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+)
+
+
+
 add_executable(lmonitor_agent
     src/main.cpp
 
@@ -21,9 +43,11 @@ add_executable(lmonitor_agent
     src/serializer/MetricsSerializer.cpp
     src/network/TcpClient.cpp
 
+)
 
-    src/protocol/FrameCodec.cpp
-
+target_link_libraries(lmonitor_agent
+    PRIVATE
+        lmonitor_common
 )
 
 add_executable(lmonitor_server
@@ -36,7 +60,12 @@ add_executable(lmonitor_server
     src/network/TcpConnection.cpp
     src/reactor/Acceptor.cpp
 
-    src/protocol/FrameCodec.cpp
+   
+)
+
+target_link_libraries(lmonitor_server
+    PRIVATE
+        lmonitor_common
 )
 
 target_include_directories(
