@@ -21,6 +21,9 @@ add_executable(lmonitor_agent
     src/serializer/MetricsSerializer.cpp
     src/network/TcpClient.cpp
 
+
+    src/protocol/FrameCodec.cpp
+
 )
 
 add_executable(lmonitor_server
@@ -32,6 +35,8 @@ add_executable(lmonitor_server
 
     src/network/TcpConnection.cpp
     src/reactor/Acceptor.cpp
+
+    src/protocol/FrameCodec.cpp
 )
 
 target_include_directories(
