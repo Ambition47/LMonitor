@@ -1,25 +1,25 @@
 #include "server/TcpServer.h"
-#include "thread/ThreadPool.h"
 
 #include "network/TcpConnection.h"
 #include "reactor/Acceptor.h"
 #include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
+#include "thread/ThreadPool.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <csignal>
 #include <iostream>
 #include <memory>
-#include <string>
-#include <unordered_map>
-#include <cerrno>
-#include <csignal>
 #include <stdexcept>
-
+#include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <sys/epoll.h>
-#include <unistd.h>
 #include <sys/signalfd.h>
+#include <unistd.h>
 
 
 namespace {
@@ -42,191 +42,228 @@ TcpServer::TcpServer(
 
 
 // ============================================================
-// Reactor server
+// Reactor Server
 // ============================================================
 
 void TcpServer::run() {
 
     // ========================================================
-    // Reactor EventLoop
+    // EventLoop
     // ========================================================
 
     EventLoop eventLoop(
         MAX_EVENTS
     );
 
-    const std::thread::id eventLoopThreadId =
-    std::this_thread::get_id();
-
-
-std::cout
-    << "[Reactor] EventLoop thread id: "
-    << eventLoopThreadId
-    << '\n';
-
-    constexpr std::size_t WORKER_THREAD_COUNT =
-    4;
-
-
-ThreadPool threadPool(
-    WORKER_THREAD_COUNT
-);
-
-
-std::cout
-    << "Worker thread pool started with "
-    << threadPool.threadCount()
-    << " threads.\n";
 
     // ========================================================
-// Block SIGINT / SIGTERM.
-//
-// Signals will no longer invoke asynchronous signal
-// handlers. They will be received through signalfd instead.
-// ========================================================
+    // Record Reactor thread id
+    // ========================================================
 
-sigset_t signalMask;
-
-if (sigemptyset(
-        &signalMask
-    ) < 0) {
-
-    throw std::runtime_error(
-        "Failed to initialize signal mask"
-    );
-}
+    const std::thread::id eventLoopThreadId =
+        std::this_thread::get_id();
 
 
-if (sigaddset(
-        &signalMask,
-        SIGINT
-    ) < 0) {
-
-    throw std::runtime_error(
-        "Failed to add SIGINT to signal mask"
-    );
-}
+    std::cout
+        << "[Reactor] EventLoop thread id: "
+        << eventLoopThreadId
+        << '\n';
 
 
-if (sigaddset(
-        &signalMask,
-        SIGTERM
-    ) < 0) {
+    // ========================================================
+    // Worker ThreadPool
+    // ========================================================
 
-    throw std::runtime_error(
-        "Failed to add SIGTERM to signal mask"
-    );
-}
+    constexpr std::size_t WORKER_THREAD_COUNT =
+        4;
 
 
-if (sigprocmask(
-        SIG_BLOCK,
-        &signalMask,
-        nullptr
-    ) < 0) {
+    constexpr std::size_t MAX_WORKER_QUEUE_SIZE =
+        1024;
 
-    throw std::runtime_error(
-        "Failed to block server signals"
-    );
-}
 
-const int signalFd =
-    signalfd(
-        -1,
-        &signalMask,
-        SFD_NONBLOCK |
-        SFD_CLOEXEC
+    ThreadPool threadPool(
+        WORKER_THREAD_COUNT,
+        MAX_WORKER_QUEUE_SIZE
     );
 
 
-if (signalFd < 0) {
-    throw std::runtime_error(
-        "Failed to create signalfd"
+    std::cout
+        << "Worker thread pool started with "
+        << threadPool.threadCount()
+        << " threads, queue capacity="
+        << threadPool.maxQueueSize()
+        << ".\n";
+
+
+    // ========================================================
+    // Block SIGINT / SIGTERM
+    //
+    // These signals will be handled through signalfd
+    // instead of traditional asynchronous signal handlers.
+    // ========================================================
+
+    sigset_t signalMask;
+
+
+    if (sigemptyset(
+            &signalMask
+        ) < 0) {
+
+        throw std::runtime_error(
+            "Failed to initialize signal mask"
+        );
+    }
+
+
+    if (sigaddset(
+            &signalMask,
+            SIGINT
+        ) < 0) {
+
+        throw std::runtime_error(
+            "Failed to add SIGINT to signal mask"
+        );
+    }
+
+
+    if (sigaddset(
+            &signalMask,
+            SIGTERM
+        ) < 0) {
+
+        throw std::runtime_error(
+            "Failed to add SIGTERM to signal mask"
+        );
+    }
+
+
+    if (sigprocmask(
+            SIG_BLOCK,
+            &signalMask,
+            nullptr
+        ) < 0) {
+
+        throw std::runtime_error(
+            "Failed to block server signals"
+        );
+    }
+
+
+    // ========================================================
+    // Create signalfd
+    // ========================================================
+
+    const int signalFd =
+        signalfd(
+            -1,
+            &signalMask,
+            SFD_NONBLOCK |
+            SFD_CLOEXEC
+        );
+
+
+    if (signalFd < 0) {
+
+        throw std::runtime_error(
+            "Failed to create signalfd"
+        );
+    }
+
+
+    // ========================================================
+    // Signal Channel
+    // ========================================================
+
+    Channel signalChannel(
+        signalFd
     );
-}
-
-Channel signalChannel(
-    signalFd
-);
 
 
-signalChannel.setEvents(
-    EPOLLIN
-);
-
-signalChannel.setReadCallback(
-    [&eventLoop, signalFd]() {
-
-        while (true) {
-
-            signalfd_siginfo signalInfo {};
-
-            const ssize_t bytesRead =
-                read(
-                    signalFd,
-                    &signalInfo,
-                    sizeof(signalInfo)
-                );
+    signalChannel.setEvents(
+        EPOLLIN
+    );
 
 
-            if (bytesRead ==
-                static_cast<ssize_t>(
-                    sizeof(signalInfo)
-                )) {
+    signalChannel.setReadCallback(
+        [
+            &eventLoop,
+            signalFd
+        ]() {
 
-                if (signalInfo.ssi_signo ==
-                        SIGINT ||
-                    signalInfo.ssi_signo ==
-                        SIGTERM) {
+            while (true) {
 
-                    std::cout
-                        << "\nShutdown signal received. "
-                        << "Stopping Reactor Server...\n";
+                signalfd_siginfo signalInfo {};
 
 
-                    eventLoop.quit();
-
-                    return;
-                }
-
-
-                continue;
-            }
+                const ssize_t bytesRead =
+                    read(
+                        signalFd,
+                        &signalInfo,
+                        sizeof(signalInfo)
+                    );
 
 
-            if (bytesRead < 0) {
+                if (bytesRead ==
+                    static_cast<ssize_t>(
+                        sizeof(signalInfo)
+                    )) {
 
-                if (errno == EINTR) {
+                    if (signalInfo.ssi_signo ==
+                            SIGINT ||
+                        signalInfo.ssi_signo ==
+                            SIGTERM) {
+
+                        std::cout
+                            << "\nShutdown signal received. "
+                            << "Stopping Reactor Server...\n";
+
+
+                        eventLoop.quit();
+
+                        return;
+                    }
+
+
                     continue;
                 }
 
 
-                if (errno == EAGAIN ||
-                    errno == EWOULDBLOCK) {
+                if (bytesRead < 0) {
+
+                    if (errno == EINTR) {
+
+                        continue;
+                    }
+
+
+                    if (errno == EAGAIN ||
+                        errno == EWOULDBLOCK) {
+
+                        return;
+                    }
+
+
+                    std::cerr
+                        << "Failed to read signalfd\n";
 
                     return;
                 }
 
 
-                std::cerr
-                    << "Failed to read signalfd\n";
-
                 return;
             }
-
-
-            return;
         }
-    }
-);
+    );
 
-eventLoop.addChannel(
-    &signalChannel
-);
+
+    eventLoop.addChannel(
+        &signalChannel
+    );
 
 
     // ========================================================
-    // Active connections
+    // Active TCP connections
     //
     // fd -> TcpConnection
     // ========================================================
@@ -252,13 +289,18 @@ eventLoop.addChannel(
     // ========================================================
 
     acceptor.setNewConnectionCallback(
-        [&](
+        [
+            &eventLoop,
+            &threadPool,
+            &connections,
+            eventLoopThreadId
+        ](
             int clientFd,
             const std::string& clientName
         ) {
 
             // ------------------------------------------------
-            // Defensive duplicate check
+            // Defensive duplicate fd check
             // ------------------------------------------------
 
             if (connections.find(
@@ -270,17 +312,19 @@ eventLoop.addChannel(
                     << clientFd
                     << '\n';
 
+
                 close(
                     clientFd
                 );
+
 
                 return;
             }
 
 
-            // ------------------------------------------------
+            // =================================================
             // Create TcpConnection
-            // ------------------------------------------------
+            // =================================================
 
             std::unique_ptr<TcpConnection>
                 connection;
@@ -289,9 +333,7 @@ eventLoop.addChannel(
             try {
 
                 connection =
-                    std::make_unique<
-                        TcpConnection
-                    >(
+                    std::make_unique<TcpConnection>(
                         eventLoop,
                         clientFd,
                         clientName
@@ -307,190 +349,236 @@ eventLoop.addChannel(
                     << '\n';
 
 
-                // TcpConnection 构造失败，
-                // fd 所有权尚未成功交给连接对象。
                 close(
                     clientFd
                 );
+
 
                 return;
             }
 
 
             // =================================================
-            // Complete message callback
+            // Complete metrics message callback
+            //
+            // This callback runs in the EventLoop thread.
             // =================================================
 
-     
-	    connection->setMessageCallback(
-    [
-        &threadPool,
-        &eventLoop,
-        eventLoopThreadId
-    ](
-        const std::string& name,
-        const std::string& message
-    ) {
+            connection->setMessageCallback(
+                [
+                    &threadPool,
+                    &eventLoop,
+                    eventLoopThreadId
+                ](
+                    const std::string& name,
+                    const std::string& message
+                ) {
+
+                    // =========================================
+                    // Verify that network callback is running
+                    // in Reactor thread.
+                    // =========================================
+
+                    const std::thread::id currentThreadId =
+                        std::this_thread::get_id();
 
 
+                    std::cout
+                        << "[I/O] Message received on thread: "
+                        << currentThreadId
+                        << "  EventLoop thread: "
+                        << eventLoopThreadId
+                        << '\n';
 
 
+                    // =========================================
+                    // Copy message data before handing it to
+                    // a Worker thread.
+                    //
+                    // Never capture these references directly.
+                    // =========================================
 
-    const std::thread::id currentThreadId =
-            std::this_thread::get_id();
-
-
-        std::cout
-            << "[I/O] Message received on thread: "
-            << currentThreadId
-            << "  EventLoop thread: "
-            << eventLoopThreadId
-            << '\n';
-        // ====================================================
-        // Important:
-        //
-        // TcpConnection callback runs in EventLoop thread.
-        //
-        // Copy name/message into the worker task so that
-        // the worker does not depend on TcpConnection lifetime.
-        // ====================================================
-
-        const std::string clientName =
-            name;
-
-        const std::string metricsMessage =
-            message;
+                    const std::string clientName =
+                        name;
 
 
-        threadPool.submit(
-            [
-                &eventLoop,
-                clientName,
-                metricsMessage,
-		eventLoopThreadId
-            ]() {
-
-	    const std::thread::id workerThreadId =
-            std::this_thread::get_id();
+                    const std::string metricsMessage =
+                        message;
 
 
-        std::cout
-            << "[Worker] Processing metrics on thread: "
-            << workerThreadId
-            << '\n';
+                    // =========================================
+                    // Submit to bounded worker queue.
+                    // =========================================
 
-                // ============================================
-                // Worker Thread
-                //
-                // For now perform a small piece of processing:
-                //
-                // 1. count bytes
-                // 2. count lines
-                //
-                // Later this location can perform:
-                //
-                // protocol parsing
-                // aggregation
-                // database persistence
-                // alert calculation
-                // ============================================
+                    const bool submitted =
+                        threadPool.trySubmit(
+                            [
+                                &eventLoop,
+                                clientName,
+                                metricsMessage,
+                                eventLoopThreadId
+                            ]() {
 
-                const std::size_t messageBytes =
-                    metricsMessage.size();
+                                // =================================
+                                // Worker Thread
+                                // =================================
+
+                                const std::thread::id workerThreadId =
+                                    std::this_thread::get_id();
 
 
-                const std::size_t lineCount =
-                    static_cast<std::size_t>(
-                        std::count(
-                            metricsMessage.begin(),
-                            metricsMessage.end(),
-                            '\n'
-                        )
-                    );
+                                std::cout
+                                    << "[Worker] Processing metrics on thread: "
+                                    << workerThreadId
+                                    << '\n';
 
 
-                // ============================================
-                // Return result to EventLoop thread
-                // ============================================
+                                // =================================
+                                // Temporary worker processing.
+                                //
+                                // Later this can become:
+                                //
+                                // protocol parsing
+                                // aggregation
+                                // database storage
+                                // alert evaluation
+                                // =================================
 
-                eventLoop.queueInLoop(
-                    [
-                        clientName,
-                        metricsMessage,
-                        messageBytes,
-                        lineCount,
-			workerThreadId,
-                       eventLoopThreadId
-                    ]() {
-
-		    const std::thread::id callbackThreadId =
-    std::this_thread::get_id();
+                                const std::size_t messageBytes =
+                                    metricsMessage.size();
 
 
-std::cout
-    << "[Reactor Callback] thread: "
-    << callbackThreadId
-    << "  worker was: "
-    << workerThreadId
-    << "  expected EventLoop: "
-    << eventLoopThreadId
-    << '\n';
+                                const std::size_t lineCount =
+                                    static_cast<std::size_t>(
+                                        std::count(
+                                            metricsMessage.begin(),
+                                            metricsMessage.end(),
+                                            '\n'
+                                        )
+                                    );
 
-                        std::cout
-                            << "\n"
-                            << "========== Metrics Processed ==========\n";
 
-                        std::cout
-                            << "Client: "
+                                // =================================
+                                // Return result to EventLoop thread.
+                                //
+                                // queueInLoop()
+                                //     ↓
+                                // eventfd
+                                //     ↓
+                                // epoll wakeup
+                                //     ↓
+                                // Reactor thread
+                                // =================================
+
+                                eventLoop.queueInLoop(
+                                    [
+                                        clientName,
+                                        metricsMessage,
+                                        messageBytes,
+                                        lineCount,
+                                        workerThreadId,
+                                        eventLoopThreadId
+                                    ]() {
+
+                                        const std::thread::id
+                                            callbackThreadId =
+                                                std::this_thread::get_id();
+
+
+                                        std::cout
+                                            << "[Reactor Callback] thread: "
+                                            << callbackThreadId
+                                            << "  worker was: "
+                                            << workerThreadId
+                                            << "  expected EventLoop: "
+                                            << eventLoopThreadId
+                                            << '\n';
+
+
+                                        std::cout
+                                            << "\n"
+                                            << "========== Metrics Processed ==========\n";
+
+
+                                        std::cout
+                                            << "Client: "
+                                            << clientName
+                                            << '\n';
+
+
+                                        std::cout
+                                            << "Message bytes: "
+                                            << messageBytes
+                                            << '\n';
+
+
+                                        std::cout
+                                            << "Message lines: "
+                                            << lineCount
+                                            << '\n';
+
+
+                                        std::cout
+                                            << metricsMessage;
+
+
+                                        std::cout
+                                            << "=======================================\n";
+                                    }
+                                );
+                            }
+                        );
+
+
+                    // =========================================
+                    // Backpressure
+                    //
+                    // Worker queue is full:
+                    //
+                    // do NOT block Reactor thread.
+                    //
+                    // Drop this metrics sample instead.
+                    // =========================================
+
+                    if (!submitted) {
+
+                        std::cerr
+                            << "[Backpressure] Worker queue full. "
+                            << "Dropping metrics from "
                             << clientName
+                            << ". Pending tasks="
+                            << threadPool.queueSize()
+                            << "/"
+                            << threadPool.maxQueueSize()
                             << '\n';
-
-
-                        std::cout
-                            << "Message bytes: "
-                            << messageBytes
-                            << '\n';
-
-
-                        std::cout
-                            << "Message lines: "
-                            << lineCount
-                            << '\n';
-
-
-                        std::cout
-                            << metricsMessage;
-
-
-                        std::cout
-                            << "=======================================\n";
                     }
-                );
-            }
-        );
-    }
-);
+                }
+            );
+
 
             // =================================================
-            // Close callback
+            // Connection close callback
             //
-            // 不立即 erase TcpConnection。
+            // TcpConnection cannot destroy itself directly
+            // while Channel callback is still running.
             //
-            // 当前可能仍在：
-            //
-            // TcpConnection::handleRead()
-            // Channel::handleEvent()
-            //
-            // 所以把删除操作放进 EventLoop 延迟任务队列。
+            // Therefore destruction is deferred through
+            // EventLoop::queueInLoop().
             // =================================================
 
             connection->setCloseCallback(
-                [&eventLoop, &connections](
+                [
+                    &eventLoop,
+                    &connections
+                ](
                     int fd
                 ) {
 
                     eventLoop.queueInLoop(
-                        [&connections, fd]() {
+                        [
+                            &connections,
+                            fd
+                        ]() {
 
                             const auto connectionIt =
                                 connections.find(
@@ -515,15 +603,15 @@ std::cout
                                 << '\n';
 
 
-                            // --------------------------------
-                            // erase unique_ptr
-                            //       ↓
+                            // ---------------------------------
+                            // Destroying unique_ptr causes:
+                            //
                             // ~TcpConnection()
-                            //       ↓
+                            //      ↓
                             // removeChannel()
-                            //       ↓
-                            // close(fd)
-                            // --------------------------------
+                            //      ↓
+                            // close(clientFd)
+                            // ---------------------------------
 
                             connections.erase(
                                 connectionIt
@@ -535,7 +623,7 @@ std::cout
 
 
             // =================================================
-            // Store ownership
+            // Store TcpConnection ownership
             // =================================================
 
             const auto result =
@@ -554,6 +642,7 @@ std::cout
                     << clientFd
                     << '\n';
 
+
                 return;
             }
 
@@ -568,37 +657,35 @@ std::cout
     );
 
 
+    // ========================================================
+    // Start Reactor
+    // ========================================================
+
     std::cout
         << "LMonitor Reactor Server listening on port "
         << port_
         << "...\n";
 
 
-    // ========================================================
-    // Start Reactor
-    //
-    // EventLoop now owns the main loop.
-    // ========================================================
-
     eventLoop.loop();
 
 
-// ========================================================
-// Reactor has stopped.
-//
-// Remove signal Channel before closing its fd.
-// ========================================================
+    // ========================================================
+    // Reactor stopped.
+    //
+    // Remove signalfd Channel before closing signalFd.
+    // ========================================================
 
-eventLoop.removeChannel(
-    &signalChannel
-);
-
-
-close(
-    signalFd
-);
+    eventLoop.removeChannel(
+        &signalChannel
+    );
 
 
-std::cout
-    << "LMonitor Reactor Server stopped gracefully.\n";
+    close(
+        signalFd
+    );
+
+
+    std::cout
+        << "LMonitor Reactor Server stopped gracefully.\n";
 }

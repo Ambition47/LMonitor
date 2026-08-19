@@ -17,7 +17,8 @@ public:
 
 
     explicit ThreadPool(
-        std::size_t threadCount
+        std::size_t threadCount,
+        std::size_t maxQueueSize = 1024
     );
 
 
@@ -34,20 +35,29 @@ public:
     ) = delete;
 
 
-    // Submit one task to the worker queue.
-    void submit(
+    // Try to submit one task.
+    //
+    // true:
+    //     task accepted
+    //
+    // false:
+    //     queue is full or pool is stopping
+    bool trySubmit(
         Task task
     );
 
 
     // Gracefully stop workers.
-    //
-    // Already queued tasks will be completed
-    // before worker threads exit.
     void stop();
 
 
     std::size_t threadCount() const;
+
+
+    std::size_t queueSize() const;
+
+
+    std::size_t maxQueueSize() const noexcept;
 
 
 private:
@@ -55,6 +65,10 @@ private:
 
 
 private:
+    std::size_t maxQueueSize_ =
+        0;
+
+
     std::vector<std::thread>
         workers_;
 

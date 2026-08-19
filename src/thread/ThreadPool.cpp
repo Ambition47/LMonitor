@@ -11,12 +11,25 @@
 // ============================================================
 
 ThreadPool::ThreadPool(
-    std::size_t threadCount
-) {
+    std::size_t threadCount,
+    std::size_t maxQueueSize
+)
+    : maxQueueSize_(
+          maxQueueSize
+      ) {
+
     if (threadCount == 0) {
 
         throw std::invalid_argument(
             "ThreadPool thread count must be greater than 0"
+        );
+    }
+
+
+    if (maxQueueSize_ == 0) {
+
+        throw std::invalid_argument(
+            "ThreadPool max queue size must be greater than 0"
         );
     }
 
@@ -40,11 +53,6 @@ ThreadPool::ThreadPool(
         }
 
     } catch (...) {
-
-        // ----------------------------------------------------
-        // If creating one of the worker threads fails,
-        // stop already-created workers before rethrowing.
-        // ----------------------------------------------------
 
         {
             std::lock_guard<std::mutex>
@@ -86,14 +94,14 @@ ThreadPool::~ThreadPool() {
 
 
 // ============================================================
-// Submit task
+// Try to submit task
 // ============================================================
 
-void ThreadPool::submit(
+bool ThreadPool::trySubmit(
     Task task
 ) {
     if (!task) {
-        return;
+        return false;
     }
 
 
@@ -106,9 +114,21 @@ void ThreadPool::submit(
 
         if (stopping_) {
 
-            throw std::runtime_error(
-                "Cannot submit task to stopped ThreadPool"
-            );
+            return false;
+        }
+
+
+        // ----------------------------------------------------
+        // Backpressure:
+        //
+        // Never allow the pending task queue to grow
+        // without limit.
+        // ----------------------------------------------------
+
+        if (tasks_.size() >=
+            maxQueueSize_) {
+
+            return false;
         }
 
 
@@ -120,13 +140,15 @@ void ThreadPool::submit(
     }
 
 
-    // Wake one sleeping worker.
     condition_.notify_one();
+
+
+    return true;
 }
 
 
 // ============================================================
-// Stop ThreadPool
+// Graceful stop
 // ============================================================
 
 void ThreadPool::stop() {
@@ -138,7 +160,6 @@ void ThreadPool::stop() {
             );
 
 
-        // stop() is idempotent.
         if (stopping_) {
 
             return;
@@ -150,7 +171,6 @@ void ThreadPool::stop() {
     }
 
 
-    // Wake every worker so that they can observe stopping_.
     condition_.notify_all();
 
 
@@ -179,7 +199,33 @@ std::size_t ThreadPool::threadCount() const {
 
 
 // ============================================================
-// Worker main loop
+// Current pending task count
+// ============================================================
+
+std::size_t ThreadPool::queueSize() const {
+
+    std::lock_guard<std::mutex>
+        lock(
+            mutex_
+        );
+
+
+    return tasks_.size();
+}
+
+
+// ============================================================
+// Maximum pending task count
+// ============================================================
+
+std::size_t ThreadPool::maxQueueSize() const noexcept {
+
+    return maxQueueSize_;
+}
+
+
+// ============================================================
+// Worker loop
 // ============================================================
 
 void ThreadPool::workerLoop() {
@@ -188,13 +234,6 @@ void ThreadPool::workerLoop() {
 
         Task task;
 
-
-        // ====================================================
-        // Wait for:
-        //
-        // 1. A new task
-        // 2. ThreadPool shutdown
-        // ====================================================
 
         {
             std::unique_lock<std::mutex>
@@ -213,21 +252,10 @@ void ThreadPool::workerLoop() {
             );
 
 
-            // ------------------------------------------------
             // Graceful shutdown:
             //
-            // stopping_ == true
-            // but tasks still exist
-            //
-            // → continue executing queued tasks.
-            //
-            // Exit only when:
-            //
-            // stopping_ == true
-            // AND
-            // tasks_.empty()
-            // ------------------------------------------------
-
+            // Stop only when shutdown was requested
+            // AND all already queued tasks are finished.
             if (stopping_ &&
                 tasks_.empty()) {
 
@@ -245,10 +273,7 @@ void ThreadPool::workerLoop() {
         }
 
 
-        // ====================================================
-        // Execute task WITHOUT holding mutex.
-        // ====================================================
-
+        // Execute outside mutex.
         try {
 
             task();
