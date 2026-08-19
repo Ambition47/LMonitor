@@ -1,6 +1,8 @@
 #include "agent/MonitorAgent.h"
-#include "serializer/MetricsSerializer.h"
+
+#include "log/Logger.h"
 #include "protocol/FrameCodec.h"
+#include "serializer/MetricsSerializer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -8,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -29,29 +32,49 @@ MonitorAgent::MonitorAgent(
           serverPort
       ) {
 
-    // 自动检测默认网络接口
+    // --------------------------------------------------------
+    // Detect default network interface
+    // --------------------------------------------------------
+
     networkInterface_ =
         networkCollector_.detectDefaultInterface();
 
-    // 获取当前在线的逻辑 CPU 数量
+
+    // --------------------------------------------------------
+    // Get number of online logical CPUs
+    // --------------------------------------------------------
+
     const long cpuCount =
-        sysconf(_SC_NPROCESSORS_ONLN);
+        sysconf(
+            _SC_NPROCESSORS_ONLN
+        );
+
 
     if (cpuCount <= 0) {
+
         throw std::runtime_error(
             "Failed to get logical CPU count"
         );
     }
 
-    cpuCount_ =
-        static_cast<std::size_t>(cpuCount);
 
-    // 检查采样周期是否合法
+    cpuCount_ =
+        static_cast<std::size_t>(
+            cpuCount
+        );
+
+
+    // --------------------------------------------------------
+    // Validate sampling interval
+    // --------------------------------------------------------
+
     if (intervalSeconds <= 0.0) {
+
         throw std::invalid_argument(
             "Sampling interval must be greater than 0"
         );
     }
+
 
     intervalSeconds_ =
         intervalSeconds;
@@ -72,6 +95,7 @@ SystemMetrics MonitorAgent::buildMetrics(
     const NetworkRate& networkRate,
     const std::vector<ProcessInfo>& processes
 ) const {
+
     SystemMetrics metrics;
 
 
@@ -180,9 +204,11 @@ SystemMetrics MonitorAgent::buildMetrics(
             processes.size()
         );
 
+
     metrics.topProcesses.reserve(
         topCount
     );
+
 
     for (std::size_t i = 0;
          i < topCount;
@@ -191,7 +217,9 @@ SystemMetrics MonitorAgent::buildMetrics(
         const ProcessInfo& process =
             processes[i];
 
+
         ProcessMetric metric;
+
 
         metric.pid =
             process.pid;
@@ -208,8 +236,11 @@ SystemMetrics MonitorAgent::buildMetrics(
         metric.residentMemoryKB =
             process.residentMemoryKB;
 
+
         metrics.topProcesses.push_back(
-            std::move(metric)
+            std::move(
+                metric
+            )
         );
     }
 
@@ -225,6 +256,7 @@ SystemMetrics MonitorAgent::buildMetrics(
 void MonitorAgent::displayMetrics(
     const SystemMetrics& metrics
 ) const {
+
     // --------------------------------------------------------
     // Unit conversion constants
     // --------------------------------------------------------
@@ -254,10 +286,12 @@ void MonitorAgent::displayMetrics(
             metrics.memoryTotalKB
         ) / kbToGiB;
 
+
     const double usedMemoryGiB =
         static_cast<double>(
             metrics.memoryUsedKB
         ) / kbToGiB;
+
 
     const double availableMemoryGiB =
         static_cast<double>(
@@ -274,10 +308,12 @@ void MonitorAgent::displayMetrics(
             metrics.diskTotalBytes
         ) / bytesToGiB;
 
+
     const double usedDiskGiB =
         static_cast<double>(
             metrics.diskUsedBytes
         ) / bytesToGiB;
+
 
     const double availableDiskGiB =
         static_cast<double>(
@@ -293,13 +329,16 @@ void MonitorAgent::displayMetrics(
         metrics.networkRxBytesPerSecond /
         bytesToKiB;
 
+
     const double txKiBPerSecond =
         metrics.networkTxBytesPerSecond /
         bytesToKiB;
 
+
     const double rxMiBPerSecond =
         metrics.networkRxBytesPerSecond /
         bytesToMiB;
+
 
     const double txMiBPerSecond =
         metrics.networkTxBytesPerSecond /
@@ -313,11 +352,14 @@ void MonitorAgent::displayMetrics(
     const uint64_t uptime =
         metrics.uptimeSeconds;
 
+
     const uint64_t days =
         uptime / 86400;
 
+
     const uint64_t hours =
         (uptime % 86400) / 3600;
+
 
     const uint64_t minutes =
         (uptime % 3600) / 60;
@@ -325,14 +367,21 @@ void MonitorAgent::displayMetrics(
 
     // --------------------------------------------------------
     // Clear terminal
+    //
+    // NOTE:
+    // std::cout remains here intentionally because this
+    // function is terminal UI output, not application logging.
     // --------------------------------------------------------
 
     std::cout
         << "\033[2J\033[H";
 
+
     std::cout
         << std::fixed
-        << std::setprecision(2);
+        << std::setprecision(
+            2
+        );
 
 
     // --------------------------------------------------------
@@ -358,6 +407,7 @@ void MonitorAgent::displayMetrics(
         << metrics.hostname
         << '\n';
 
+
     std::cout
         << "Uptime          : "
         << days
@@ -366,6 +416,7 @@ void MonitorAgent::displayMetrics(
         << " hours "
         << minutes
         << " minutes\n";
+
 
     std::cout
         << "Logical CPUs    : "
@@ -382,6 +433,7 @@ void MonitorAgent::displayMetrics(
         << metrics.cpuUsagePercent
         << " %\n";
 
+
     std::cout
         << "Sample Interval : "
         << metrics.sampleIntervalSeconds
@@ -395,20 +447,24 @@ void MonitorAgent::displayMetrics(
     std::cout
         << "Memory\n";
 
+
     std::cout
         << "  Total         : "
         << totalMemoryGiB
         << " GiB\n";
+
 
     std::cout
         << "  Used          : "
         << usedMemoryGiB
         << " GiB\n";
 
+
     std::cout
         << "  Available     : "
         << availableMemoryGiB
         << " GiB\n";
+
 
     std::cout
         << "  Usage         : "
@@ -423,15 +479,18 @@ void MonitorAgent::displayMetrics(
     std::cout
         << "Load Average\n";
 
+
     std::cout
         << "  1 min         : "
         << metrics.load1
         << '\n';
 
+
     std::cout
         << "  5 min         : "
         << metrics.load5
         << '\n';
+
 
     std::cout
         << "  15 min        : "
@@ -448,20 +507,24 @@ void MonitorAgent::displayMetrics(
         << metrics.diskMountPoint
         << '\n';
 
+
     std::cout
         << "  Total         : "
         << totalDiskGiB
         << " GiB\n";
+
 
     std::cout
         << "  Used          : "
         << usedDiskGiB
         << " GiB\n";
 
+
     std::cout
         << "  Available     : "
         << availableDiskGiB
         << " GiB\n";
+
 
     std::cout
         << "  Usage         : "
@@ -478,12 +541,14 @@ void MonitorAgent::displayMetrics(
         << metrics.networkInterface
         << '\n';
 
+
     std::cout
         << "  RX Rate       : "
         << rxKiBPerSecond
         << " KiB/s  ("
         << rxMiBPerSecond
         << " MiB/s)\n";
+
 
     std::cout
         << "  TX Rate       : "
@@ -500,14 +565,20 @@ void MonitorAgent::displayMetrics(
     std::cout
         << "Top Processes (by CPU)\n\n";
 
+
     std::cout
         << std::left
-        << std::setw(10) << "PID"
-        << std::setw(12) << "CPU%"
-        << std::setw(12) << "MEM%"
-        << std::setw(14) << "RSS(MiB)"
+        << std::setw(10)
+        << "PID"
+        << std::setw(12)
+        << "CPU%"
+        << std::setw(12)
+        << "MEM%"
+        << std::setw(14)
+        << "RSS(MiB)"
         << "NAME"
         << '\n';
+
 
     std::cout
         << "------------------------------------------------------\n";
@@ -520,6 +591,7 @@ void MonitorAgent::displayMetrics(
             static_cast<double>(
                 process.residentMemoryKB
             ) / kbToMiB;
+
 
         std::cout
             << std::left
@@ -543,6 +615,7 @@ void MonitorAgent::displayMetrics(
     std::cout
         << "\n========================================\n";
 
+
     std::cout.flush();
 }
 
@@ -554,6 +627,7 @@ void MonitorAgent::displayMetrics(
 void MonitorAgent::run(
     volatile std::sig_atomic_t& runningFlag
 ) {
+
     // --------------------------------------------------------
     // Initial CPU snapshot
     // --------------------------------------------------------
@@ -571,6 +645,7 @@ void MonitorAgent::run(
             networkInterface_
         );
 
+
     auto previousNetworkTime =
         std::chrono::steady_clock::now();
 
@@ -579,8 +654,9 @@ void MonitorAgent::run(
     // Initial process snapshot
     // --------------------------------------------------------
 
-    std::vector<ProcessSnapshot> previousProcesses =
-        processCollector_.collectSnapshots();
+    std::vector<ProcessSnapshot>
+        previousProcesses =
+            processCollector_.collectSnapshots();
 
 
     // --------------------------------------------------------
@@ -602,22 +678,40 @@ void MonitorAgent::run(
         sampleInterval;
 
 
-
-
-
+    // --------------------------------------------------------
+    // Exponential reconnect backoff
+    //
+    // 1 -> 2 -> 4 -> 8 -> 16 -> 30 seconds
+    // --------------------------------------------------------
 
     std::chrono::seconds reconnectDelay(
-    1
-);
-
-const std::chrono::seconds maxReconnectDelay(
-    30
-);
-
-auto nextReconnectTime =
-    std::chrono::steady_clock::now();
+        1
+    );
 
 
+    const std::chrono::seconds
+        maxReconnectDelay(
+            30
+        );
+
+
+    auto nextReconnectTime =
+        std::chrono::steady_clock::now();
+
+
+    Logger::instance().info(
+        "LMonitor Agent started: interface=" +
+        networkInterface_ +
+        ", logical_cpus=" +
+        std::to_string(
+            cpuCount_
+        ) +
+        ", sampling_interval=" +
+        std::to_string(
+            intervalSeconds_
+        ) +
+        "s"
+    );
 
 
     // ========================================================
@@ -626,12 +720,16 @@ auto nextReconnectTime =
 
     while (runningFlag) {
 
-        // 等待到下一个固定采样时间点
+        // ----------------------------------------------------
+        // Wait until next fixed sample time
+        // ----------------------------------------------------
+
         std::this_thread::sleep_until(
             nextSampleTime
         );
 
-        // sleep 期间可能收到 SIGINT / SIGTERM
+
+        // sleep_until may return after SIGINT / SIGTERM.
         if (!runningFlag) {
             break;
         }
@@ -654,6 +752,7 @@ auto nextReconnectTime =
                 networkInterface_
             );
 
+
         const auto currentNetworkTime =
             std::chrono::steady_clock::now();
 
@@ -662,8 +761,9 @@ auto nextReconnectTime =
         // Process snapshot
         // ----------------------------------------------------
 
-        std::vector<ProcessSnapshot> currentProcesses =
-            processCollector_.collectSnapshots();
+        std::vector<ProcessSnapshot>
+            currentProcesses =
+                processCollector_.collectSnapshots();
 
 
         // ----------------------------------------------------
@@ -712,28 +812,34 @@ auto nextReconnectTime =
         const MemoryInfo memory =
             memoryCollector_.collect();
 
+
         const LoadInfo load =
             loadCollector_.collect();
+
 
         const SystemInfo systemInfo =
             systemCollector_.collect();
 
+
         const DiskInfo disk =
-            diskCollector_.collect("/");
+            diskCollector_.collect(
+                "/"
+            );
 
 
         // ----------------------------------------------------
         // Process usage
         // ----------------------------------------------------
 
-        const std::vector<ProcessInfo> processes =
-            processCollector_.calculateUsage(
-                previousProcesses,
-                currentProcesses,
-                totalCpuDelta,
-                memory.totalKB,
-                cpuCount_
-            );
+        const std::vector<ProcessInfo>
+            processes =
+                processCollector_.calculateUsage(
+                    previousProcesses,
+                    currentProcesses,
+                    totalCpuDelta,
+                    memory.totalKB,
+                    cpuCount_
+                );
 
 
         // ----------------------------------------------------
@@ -754,113 +860,166 @@ auto nextReconnectTime =
 
 
         // ----------------------------------------------------
-        // Display
+        // Terminal UI
         // ----------------------------------------------------
-        //终端显示
+
         displayMetrics(
             metrics
         );
-       
-	//序列化
-	const std::string serializedMetrics =
-    metricsSerializer_.serialize(
-        metrics
-    );
-	const std::string framedMetrics =
-    FrameCodec::encode(
-        serializedMetrics
-    );
- 
 
-	const auto reconnectNow =
-    std::chrono::steady_clock::now();
-
-
-if (!tcpClient_.isConnected() &&
-    reconnectNow >= nextReconnectTime) {
-
-    std::cout
-        << "Connecting to monitoring server...\n";
-
-
-    if (tcpClient_.connectToServer()) {
-
-        reconnectDelay =
-            std::chrono::seconds(
-                1
-            );
-
-        nextReconnectTime =
-            reconnectNow;
-
-    } else {
-
-        std::cerr
-            << "Unable to connect to monitoring server. "
-            << "Retrying in "
-            << reconnectDelay.count()
-            << " second(s).\n";
-
-
-        nextReconnectTime =
-            reconnectNow +
-            reconnectDelay;
-
-
-        reconnectDelay =
-            std::min(
-                reconnectDelay * 2,
-                maxReconnectDelay
-            );
-    }
-}
-
-
-if (tcpClient_.isConnected()) {
-
-    if (!tcpClient_.sendAll(
-            framedMetrics
-        )) {
-
-        std::cerr
-            << "Failed to send metrics. "
-            << "The connection will be retried.\n";
-
-
-        reconnectDelay =
-            std::chrono::seconds(
-                1
-            );
-
-
-        nextReconnectTime =
-            std::chrono::steady_clock::now() +
-            reconnectDelay;
-    }
-}
 
         // ----------------------------------------------------
-        // Current snapshot becomes previous snapshot
+        // Serialize metrics
         // ----------------------------------------------------
-          //当前快照变成下一轮previous
+
+        const std::string serializedMetrics =
+            metricsSerializer_.serialize(
+                metrics
+            );
+
+
+        // ----------------------------------------------------
+        // Protocol framing
+        //
+        // [4-byte network-order length][payload]
+        // ----------------------------------------------------
+
+        const std::string framedMetrics =
+            FrameCodec::encode(
+                serializedMetrics
+            );
+
+
+        // ----------------------------------------------------
+        // Automatic reconnect
+        // ----------------------------------------------------
+
+        const auto reconnectNow =
+            std::chrono::steady_clock::now();
+
+
+        if (!tcpClient_.isConnected() &&
+            reconnectNow >= nextReconnectTime) {
+
+            Logger::instance().info(
+                "Attempting to connect to monitoring server"
+            );
+
+
+            if (tcpClient_.connectToServer()) {
+
+                // --------------------------------------------
+                // Successful connection resets backoff.
+                // --------------------------------------------
+
+                reconnectDelay =
+                    std::chrono::seconds(
+                        1
+                    );
+
+
+                nextReconnectTime =
+                    reconnectNow;
+
+            } else {
+
+                // --------------------------------------------
+                // TcpClient already logs the actual connect()
+                // failure and errno reason.
+                //
+                // MonitorAgent records the retry policy.
+                // --------------------------------------------
+
+                Logger::instance().warning(
+                    "Next monitoring server reconnect attempt in " +
+                    std::to_string(
+                        reconnectDelay.count()
+                    ) +
+                    " second(s)"
+                );
+
+
+                nextReconnectTime =
+                    reconnectNow +
+                    reconnectDelay;
+
+
+                reconnectDelay =
+                    std::min(
+                        reconnectDelay * 2,
+                        maxReconnectDelay
+                    );
+            }
+        }
+
+
+        // ----------------------------------------------------
+        // Send framed metrics
+        // ----------------------------------------------------
+
+        if (tcpClient_.isConnected()) {
+
+            if (!tcpClient_.sendAll(
+                    framedMetrics
+                )) {
+
+                // --------------------------------------------
+                // TcpClient already logged the send() error.
+                //
+                // Schedule reconnect from the Agent layer.
+                // --------------------------------------------
+
+                reconnectDelay =
+                    std::chrono::seconds(
+                        1
+                    );
+
+
+                nextReconnectTime =
+                    std::chrono::steady_clock::now() +
+                    reconnectDelay;
+
+
+                Logger::instance().warning(
+                    "Metrics transmission failed; "
+                    "reconnect scheduled in 1 second"
+                );
+            }
+        }
+
+
+        // ----------------------------------------------------
+        // Current snapshot becomes next previous snapshot
+        // ----------------------------------------------------
+
         previousCpu =
             currentCpu;
+
 
         previousNetwork =
             currentNetwork;
 
+
         previousNetworkTime =
             currentNetworkTime;
 
+
         previousProcesses =
-            std::move(currentProcesses);
+            std::move(
+                currentProcesses
+            );
 
 
         // ----------------------------------------------------
-        // Schedule next sample
+        // Schedule next fixed sample
         // ----------------------------------------------------
 
         nextSampleTime +=
             sampleInterval;
     }
+
+
+    Logger::instance().info(
+        "LMonitor Agent stopped"
+    );
 }
