@@ -1,8 +1,10 @@
 #include "thread/ThreadPool.h"
 
+#include "log/Logger.h"
+
 #include <exception>
-#include <iostream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 
@@ -59,6 +61,7 @@ ThreadPool::ThreadPool(
                 lock(
                     mutex_
                 );
+
 
             stopping_ =
                 true;
@@ -117,13 +120,6 @@ bool ThreadPool::trySubmit(
             return false;
         }
 
-
-        // ----------------------------------------------------
-        // Backpressure:
-        //
-        // Never allow the pending task queue to grow
-        // without limit.
-        // ----------------------------------------------------
 
         if (tasks_.size() >=
             maxQueueSize_) {
@@ -199,7 +195,7 @@ std::size_t ThreadPool::threadCount() const {
 
 
 // ============================================================
-// Current pending task count
+// Current queue size
 // ============================================================
 
 std::size_t ThreadPool::queueSize() const {
@@ -215,7 +211,7 @@ std::size_t ThreadPool::queueSize() const {
 
 
 // ============================================================
-// Maximum pending task count
+// Maximum queue size
 // ============================================================
 
 std::size_t ThreadPool::maxQueueSize() const noexcept {
@@ -252,10 +248,6 @@ void ThreadPool::workerLoop() {
             );
 
 
-            // Graceful shutdown:
-            //
-            // Stop only when shutdown was requested
-            // AND all already queued tasks are finished.
             if (stopping_ &&
                 tasks_.empty()) {
 
@@ -273,7 +265,11 @@ void ThreadPool::workerLoop() {
         }
 
 
-        // Execute outside mutex.
+        // ----------------------------------------------------
+        // Never allow a task exception to escape a worker
+        // thread entry function.
+        // ----------------------------------------------------
+
         try {
 
             task();
@@ -282,15 +278,18 @@ void ThreadPool::workerLoop() {
             const std::exception& e
         ) {
 
-            std::cerr
-                << "ThreadPool task exception: "
-                << e.what()
-                << '\n';
+            Logger::instance().error(
+                "ThreadPool task exception: " +
+                std::string(
+                    e.what()
+                )
+            );
 
         } catch (...) {
 
-            std::cerr
-                << "ThreadPool task threw unknown exception\n";
+            Logger::instance().error(
+                "ThreadPool task threw unknown exception"
+            );
         }
     }
 }

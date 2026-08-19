@@ -1,10 +1,11 @@
 #include "reactor/Acceptor.h"
 
+#include "log/Logger.h"
 #include "reactor/EventLoop.h"
 
 #include <cerrno>
-#include <iostream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include <arpa/inet.h>
@@ -39,6 +40,7 @@ int Acceptor::createListeningSocket(
 
 
     if (listenFd < 0) {
+
         throw std::runtime_error(
             "Failed to create listening socket"
         );
@@ -49,7 +51,8 @@ int Acceptor::createListeningSocket(
     // Allow quick port reuse
     // --------------------------------------------------------
 
-    int reuse = 1;
+    int reuse =
+        1;
 
 
     if (setsockopt(
@@ -64,6 +67,7 @@ int Acceptor::createListeningSocket(
             listenFd
         );
 
+
         throw std::runtime_error(
             "Failed to set SO_REUSEADDR"
         );
@@ -71,7 +75,7 @@ int Acceptor::createListeningSocket(
 
 
     // --------------------------------------------------------
-    // Configure address
+    // Configure server address
     // --------------------------------------------------------
 
     sockaddr_in serverAddress {};
@@ -106,6 +110,7 @@ int Acceptor::createListeningSocket(
             listenFd
         );
 
+
         throw std::runtime_error(
             "Failed to bind listening socket"
         );
@@ -124,6 +129,7 @@ int Acceptor::createListeningSocket(
         close(
             listenFd
         );
+
 
         throw std::runtime_error(
             "Failed to listen on socket"
@@ -153,8 +159,6 @@ Acceptor::Acceptor(
           listenFd_
       ) {
 
-    // 监听 Socket 主要关注：
-    // “是否有新连接可以 accept”
     channel_.setEvents(
         EPOLLIN
     );
@@ -170,10 +174,12 @@ Acceptor::Acceptor(
     channel_.setErrorCallback(
         [this]() {
 
-            std::cerr
-                << "Listening socket error: fd="
-                << listenFd_
-                << '\n';
+            Logger::instance().error(
+                "Listening socket error: fd=" +
+                std::to_string(
+                    listenFd_
+                )
+            );
         }
     );
 
@@ -190,7 +196,8 @@ Acceptor::Acceptor(
             listenFd_
         );
 
-        listenFd_ = -1;
+        listenFd_ =
+            -1;
 
         throw;
     }
@@ -202,6 +209,7 @@ Acceptor::Acceptor(
 // ============================================================
 
 Acceptor::~Acceptor() {
+
     try {
 
         eventLoop_.removeChannel(
@@ -209,7 +217,7 @@ Acceptor::~Acceptor() {
         );
 
     } catch (...) {
-        // 析构函数不能抛异常
+        // Destructor must not throw.
     }
 
 
@@ -219,7 +227,8 @@ Acceptor::~Acceptor() {
             listenFd_
         );
 
-        listenFd_ = -1;
+        listenFd_ =
+            -1;
     }
 }
 
@@ -231,6 +240,7 @@ Acceptor::~Acceptor() {
 void Acceptor::setNewConnectionCallback(
     NewConnectionCallback callback
 ) {
+
     newConnectionCallback_ =
         std::move(
             callback
@@ -276,20 +286,20 @@ void Acceptor::handleAccept() {
             if (errno == EAGAIN ||
                 errno == EWOULDBLOCK) {
 
-                // 当前待处理连接已经全部 accept 完。
                 return;
             }
 
 
-            std::cerr
-                << "accept4 failed\n";
+            Logger::instance().error(
+                "accept4 failed"
+            );
 
             return;
         }
 
 
         // ----------------------------------------------------
-        // Convert client IP address
+        // Convert client IP
         // ----------------------------------------------------
 
         char clientIp[
@@ -304,12 +314,15 @@ void Acceptor::handleAccept() {
                 sizeof(clientIp)
             ) == nullptr) {
 
-            std::cerr
-                << "Failed to parse client IP\n";
+            Logger::instance().error(
+                "Failed to parse client IP"
+            );
+
 
             close(
                 clientFd
             );
+
 
             continue;
         }
@@ -340,7 +353,11 @@ void Acceptor::handleAccept() {
 
         } else {
 
-            // 没有上层处理者时不能泄漏 fd
+            Logger::instance().warning(
+                "Accepted client but no new-connection callback is registered"
+            );
+
+
             close(
                 clientFd
             );

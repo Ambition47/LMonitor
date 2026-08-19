@@ -1,11 +1,11 @@
 #include "reactor/EventLoop.h"
 
+#include "log/Logger.h"
 #include "reactor/Channel.h"
 
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -81,10 +81,6 @@ EventLoop::EventLoop(
 
     try {
 
-        // ----------------------------------------------------
-        // Treat eventfd exactly like other Reactor fds.
-        // ----------------------------------------------------
-
         wakeupChannel_ =
             std::make_unique<Channel>(
                 wakeupFd_
@@ -137,10 +133,6 @@ EventLoop::EventLoop(
 
 EventLoop::~EventLoop() {
 
-    // --------------------------------------------------------
-    // Remove wakeup Channel before destroying eventfd.
-    // --------------------------------------------------------
-
     if (wakeupChannel_) {
 
         try {
@@ -187,6 +179,7 @@ void EventLoop::addChannel(
     Channel* channel
 ) {
     if (channel == nullptr) {
+
         throw std::invalid_argument(
             "Channel must not be null"
         );
@@ -224,6 +217,7 @@ void EventLoop::updateChannel(
     Channel* channel
 ) {
     if (channel == nullptr) {
+
         throw std::invalid_argument(
             "Channel must not be null"
         );
@@ -289,7 +283,9 @@ void EventLoop::removeChannel(
 // ============================================================
 
 void EventLoop::loop() {
+
     if (looping_) {
+
         throw std::runtime_error(
             "EventLoop is already running"
         );
@@ -337,16 +333,12 @@ void EventLoop::quit() {
     );
 
 
-    // epoll_wait() may currently be blocked forever.
-    //
-    // Writing to eventfd makes wakeupFd_ readable,
-    // causing epoll_wait() to return immediately.
     wakeup();
 }
 
 
 // ============================================================
-// Queue task
+// Queue deferred task
 // ============================================================
 
 void EventLoop::queueInLoop(
@@ -356,15 +348,6 @@ void EventLoop::queueInLoop(
         return;
     }
 
-
-    // --------------------------------------------------------
-    // pendingFunctors_ may now be accessed by:
-    //
-    // EventLoop thread
-    // Worker thread
-    //
-    // so it must be protected.
-    // --------------------------------------------------------
 
     {
         std::lock_guard<std::mutex>
@@ -380,13 +363,6 @@ void EventLoop::queueInLoop(
         );
     }
 
-
-    // --------------------------------------------------------
-    // Wake Reactor.
-    //
-    // Even if epoll_wait() currently has no network event,
-    // the newly queued task will be processed promptly.
-    // --------------------------------------------------------
 
     wakeup();
 }
@@ -428,11 +404,6 @@ void EventLoop::wakeup() {
         }
 
 
-        // eventfd counter is already full.
-        //
-        // In practice this is extraordinarily unlikely.
-        // More importantly, the fd is already readable,
-        // so the EventLoop is already going to wake up.
         if (bytesWritten < 0 &&
             errno == EAGAIN) {
 
@@ -440,8 +411,9 @@ void EventLoop::wakeup() {
         }
 
 
-        std::cerr
-            << "Failed to wake EventLoop through eventfd\n";
+        Logger::instance().error(
+            "Failed to wake EventLoop through eventfd"
+        );
 
         return;
     }
@@ -491,8 +463,9 @@ void EventLoop::handleWakeup() {
         }
 
 
-        std::cerr
-            << "Failed to read EventLoop eventfd\n";
+        Logger::instance().error(
+            "Failed to read EventLoop eventfd"
+        );
 
         return;
     }
@@ -508,12 +481,6 @@ void EventLoop::doPendingFunctors() {
     std::vector<Functor>
         functors;
 
-
-    // --------------------------------------------------------
-    // Only hold mutex while swapping containers.
-    //
-    // Never execute user callback while holding the mutex.
-    // --------------------------------------------------------
 
     {
         std::lock_guard<std::mutex>
@@ -532,7 +499,28 @@ void EventLoop::doPendingFunctors() {
          functors) {
 
         if (functor) {
-            functor();
+
+            try {
+
+                functor();
+
+            } catch (
+                const std::exception& e
+            ) {
+
+                Logger::instance().error(
+                    "EventLoop pending functor exception: " +
+                    std::string(
+                        e.what()
+                    )
+                );
+
+            } catch (...) {
+
+                Logger::instance().error(
+                    "EventLoop pending functor threw unknown exception"
+                );
+            }
         }
     }
 }
@@ -601,6 +589,11 @@ void EventLoop::loopOnce(
 
 
         if (channel == nullptr) {
+
+            Logger::instance().warning(
+                "EventLoop received an event with null Channel"
+            );
+
             continue;
         }
 
@@ -610,10 +603,6 @@ void EventLoop::loopOnce(
         );
     }
 
-
-    // ========================================================
-    // Execute tasks only after Channel callbacks finish.
-    // ========================================================
 
     doPendingFunctors();
 }

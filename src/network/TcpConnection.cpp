@@ -1,9 +1,11 @@
 #include "network/TcpConnection.h"
+
+#include "log/Logger.h"
 #include "protocol/FrameCodec.h"
 
 #include <cerrno>
 #include <exception>
-#include <iostream>
+#include <string>
 #include <utility>
 
 #include <sys/epoll.h>
@@ -16,9 +18,12 @@ namespace {
 constexpr std::size_t BUFFER_SIZE =
     4096;
 
-
 }  // namespace
 
+
+// ============================================================
+// Constructor
+// ============================================================
 
 TcpConnection::TcpConnection(
     EventLoop& eventLoop,
@@ -28,13 +33,12 @@ TcpConnection::TcpConnection(
     : eventLoop_(eventLoop),
       fd_(fd),
       clientName_(
-          std::move(clientName)
+          std::move(
+              clientName
+          )
       ),
       channel_(fd) {
 
-    // 关注：
-    // 1. 可读事件
-    // 2. 对端关闭连接
     channel_.setEvents(
         EPOLLIN |
         EPOLLRDHUP
@@ -62,66 +66,90 @@ TcpConnection::TcpConnection(
     );
 
 
-    // 注册到 Reactor EventLoop
     eventLoop_.addChannel(
         &channel_
     );
 }
 
 
+// ============================================================
+// Destructor
+// ============================================================
+
 TcpConnection::~TcpConnection() {
-    // 析构函数不能让异常继续传播
+
     try {
+
         eventLoop_.removeChannel(
             &channel_
         );
+
     } catch (...) {
         // Destructor must not throw.
     }
 
 
     if (fd_ >= 0) {
+
         close(
             fd_
         );
 
-        fd_ = -1;
+        fd_ =
+            -1;
     }
 }
 
 
+// ============================================================
+// Accessors
+// ============================================================
+
 int TcpConnection::fd() const {
+
     return fd_;
 }
 
 
 const std::string&
 TcpConnection::clientName() const {
+
     return clientName_;
 }
 
 
+// ============================================================
+// Callback registration
+// ============================================================
+
 void TcpConnection::setMessageCallback(
     MessageCallback callback
 ) {
+
     messageCallback_ =
-        std::move(callback);
+        std::move(
+            callback
+        );
 }
 
 
 void TcpConnection::setCloseCallback(
     CloseCallback callback
 ) {
+
     closeCallback_ =
-        std::move(callback);
+        std::move(
+            callback
+        );
 }
 
 
 // ============================================================
-// Read all currently available socket data
+// Read available socket data
 // ============================================================
 
 void TcpConnection::handleRead() {
+
     if (closing_) {
         return;
     }
@@ -161,14 +189,15 @@ void TcpConnection::handleRead() {
 
         if (bytesReceived == 0) {
 
-            // 对端正常关闭 TCP 连接
             requestClose();
 
             return;
         }
 
 
+        // ----------------------------------------------------
         // recv < 0
+        // ----------------------------------------------------
 
         if (errno == EINTR) {
             continue;
@@ -178,9 +207,18 @@ void TcpConnection::handleRead() {
         if (errno == EAGAIN ||
             errno == EWOULDBLOCK) {
 
-            // 非阻塞 Socket 当前已经没有更多数据
             return;
         }
+
+
+        Logger::instance().error(
+            "recv failed from " +
+            clientName_ +
+            ", fd=" +
+            std::to_string(
+                fd_
+            )
+        );
 
 
         requestClose();
@@ -195,6 +233,7 @@ void TcpConnection::handleRead() {
 // ============================================================
 
 void TcpConnection::handleClose() {
+
     requestClose();
 }
 
@@ -204,17 +243,20 @@ void TcpConnection::handleClose() {
 // ============================================================
 
 void TcpConnection::handleError() {
+
     if (closing_) {
         return;
     }
 
 
-    std::cerr
-        << "Socket error: "
-        << clientName_
-        << " fd="
-        << fd_
-        << '\n';
+    Logger::instance().error(
+        "Socket error from " +
+        clientName_ +
+        ", fd=" +
+        std::to_string(
+            fd_
+        )
+    );
 
 
     requestClose();
@@ -222,7 +264,7 @@ void TcpConnection::handleError() {
 
 
 // ============================================================
-// Parse complete LMONITOR messages
+// Parse complete length-prefixed frames
 // ============================================================
 
 void TcpConnection::processPendingData() {
@@ -234,14 +276,6 @@ void TcpConnection::processPendingData() {
 
         try {
 
-            // 尝试从 TCP 字节流缓存中
-            // 解析出一条完整 length-prefixed frame。
-            //
-            // false:
-            //     当前数据还不够一整帧
-            //
-            // true:
-            //     成功解析出一整帧
             if (!FrameCodec::tryDecode(
                     pendingData_,
                     message
@@ -254,16 +288,14 @@ void TcpConnection::processPendingData() {
             const std::exception& e
         ) {
 
-            // 非法长度等协议错误。
-            //
-            // 例如客户端声称下一帧有 100MB，
-            // 超过 FrameCodec::MAX_FRAME_SIZE。
-            std::cerr
-                << "Invalid frame from "
-                << clientName_
-                << ": "
-                << e.what()
-                << '\n';
+            Logger::instance().error(
+                "Invalid frame from " +
+                clientName_ +
+                ": " +
+                std::string(
+                    e.what()
+                )
+            );
 
 
             requestClose();
@@ -271,10 +303,6 @@ void TcpConnection::processPendingData() {
             return;
         }
 
-
-        // ----------------------------------------------------
-        // One complete payload has been decoded.
-        // ----------------------------------------------------
 
         if (messageCallback_) {
 
@@ -292,6 +320,7 @@ void TcpConnection::processPendingData() {
 // ============================================================
 
 void TcpConnection::requestClose() {
+
     if (closing_) {
         return;
     }
@@ -305,6 +334,13 @@ void TcpConnection::requestClose() {
 
         closeCallback_(
             fd_
+        );
+
+    } else {
+
+        Logger::instance().warning(
+            "TcpConnection close requested without close callback: " +
+            clientName_
         );
     }
 }
