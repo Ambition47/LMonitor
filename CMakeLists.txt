@@ -58,6 +58,8 @@ add_library(
     STATIC
 
     src/protocol/FrameCodec.cpp
+
+    src/log/Logger.cpp
 )
 
 

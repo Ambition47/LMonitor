@@ -1,4 +1,6 @@
 #include "server/TcpServer.h"
+#include "log/Logger.h"
+
 
 #include "network/TcpConnection.h"
 #include "reactor/Acceptor.h"
@@ -244,8 +246,9 @@ void TcpServer::run() {
                     }
 
 
-                    std::cerr
-                        << "Failed to read signalfd\n";
+                    Logger::instance().error(
+    "Failed to read signalfd"
+);
 
                     return;
                 }
@@ -661,10 +664,12 @@ void TcpServer::run() {
     // Start Reactor
     // ========================================================
 
-    std::cout
-        << "LMonitor Reactor Server listening on port "
-        << port_
-        << "...\n";
+    Logger::instance().info(
+    "LMonitor Reactor Server listening on port " +
+    std::to_string(
+        port_
+    )
+);
 
 
     eventLoop.loop();
