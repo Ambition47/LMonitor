@@ -1,6 +1,7 @@
 #ifndef LMONITOR_LOGGER_H
 #define LMONITOR_LOGGER_H
 
+#include <fstream>
 #include <mutex>
 #include <string>
 
@@ -14,8 +15,16 @@ public:
     };
 
 
+    // ========================================================
+    // Singleton
+    // ========================================================
+
     static Logger& instance();
 
+
+    // ========================================================
+    // Main logging interface
+    // ========================================================
 
     void log(
         Level level,
@@ -38,8 +47,18 @@ public:
     );
 
 
+    // ========================================================
+    // Log file information
+    // ========================================================
+
+    const std::string& logFilePath() const noexcept;
+
+
 private:
-    Logger() = default;
+    Logger();
+
+
+    ~Logger();
 
 
     Logger(
@@ -52,6 +71,10 @@ private:
     ) = delete;
 
 
+    // ========================================================
+    // Helpers
+    // ========================================================
+
     static const char* levelToString(
         Level level
     );
@@ -60,8 +83,17 @@ private:
     static std::string currentTimestamp();
 
 
+    static std::string detectLogFilePath();
+
+
 private:
     std::mutex mutex_;
+
+
+    std::ofstream logFile_;
+
+
+    std::string logFilePath_;
 };
 
 #endif
