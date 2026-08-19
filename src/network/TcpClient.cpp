@@ -1,8 +1,11 @@
 #include "network/TcpClient.h"
 
+#include "log/Logger.h"
+
 #include <cerrno>
-#include <iostream>
+#include <cstring>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include <arpa/inet.h>
@@ -10,12 +13,18 @@
 #include <unistd.h>
 
 
+// ============================================================
+// Constructor
+// ============================================================
+
 TcpClient::TcpClient(
     std::string serverIp,
     uint16_t serverPort
 )
     : serverIp_(
-          std::move(serverIp)
+          std::move(
+              serverIp
+          )
       ),
       serverPort_(
           serverPort
@@ -23,7 +32,12 @@ TcpClient::TcpClient(
 }
 
 
+// ============================================================
+// Destructor
+// ============================================================
+
 TcpClient::~TcpClient() {
+
     disconnect();
 }
 
@@ -44,6 +58,7 @@ int TcpClient::createSocket() const {
 
 
     if (socketFd < 0) {
+
         throw std::runtime_error(
             "Failed to create TCP socket"
         );
@@ -55,19 +70,27 @@ int TcpClient::createSocket() const {
 
 
 // ============================================================
-// Connect to monitoring server
+// Connect to LMonitor Server
 // ============================================================
 
 bool TcpClient::connectToServer() {
 
-    // 如果已经连接，就不重复 connect。
+    // --------------------------------------------------------
+    // Already connected.
+    // --------------------------------------------------------
+
     if (isConnected()) {
         return true;
     }
 
 
-    int newSocketFd = -1;
+    int newSocketFd =
+        -1;
 
+
+    // --------------------------------------------------------
+    // Create socket
+    // --------------------------------------------------------
 
     try {
 
@@ -78,14 +101,21 @@ bool TcpClient::connectToServer() {
         const std::exception& e
     ) {
 
-        std::cerr
-            << "TCP socket creation failed: "
-            << e.what()
-            << '\n';
+        Logger::instance().error(
+            "TCP socket creation failed: " +
+            std::string(
+                e.what()
+            )
+        );
+
 
         return false;
     }
 
+
+    // --------------------------------------------------------
+    // Build server address
+    // --------------------------------------------------------
 
     sockaddr_in serverAddress {};
 
@@ -108,19 +138,24 @@ bool TcpClient::connectToServer() {
 
     if (conversionResult != 1) {
 
-        std::cerr
-            << "Invalid server IP address: "
-            << serverIp_
-            << '\n';
+        Logger::instance().error(
+            "Invalid monitoring server IP address: " +
+            serverIp_
+        );
 
 
         close(
             newSocketFd
         );
 
+
         return false;
     }
 
+
+    // --------------------------------------------------------
+    // Connect
+    // --------------------------------------------------------
 
     if (connect(
             newSocketFd,
@@ -130,24 +165,51 @@ bool TcpClient::connectToServer() {
             sizeof(serverAddress)
         ) < 0) {
 
+        const int savedErrno =
+            errno;
+
+
+        Logger::instance().warning(
+            "Failed to connect to monitoring server " +
+            serverIp_ +
+            ":" +
+            std::to_string(
+                serverPort_
+            ) +
+            ": " +
+            std::string(
+                std::strerror(
+                    savedErrno
+                )
+            )
+        );
+
+
         close(
             newSocketFd
         );
+
 
         return false;
     }
 
 
+    // --------------------------------------------------------
+    // Connection established.
+    // --------------------------------------------------------
+
     socketFd_ =
         newSocketFd;
 
 
-    std::cout
-        << "Connected to LMonitor server "
-        << serverIp_
-        << ":"
-        << serverPort_
-        << '\n';
+    Logger::instance().info(
+        "Connected to monitoring server " +
+        serverIp_ +
+        ":" +
+        std::to_string(
+            serverPort_
+        )
+    );
 
 
     return true;
@@ -160,14 +222,18 @@ bool TcpClient::connectToServer() {
 
 void TcpClient::disconnect() {
 
-    if (socketFd_ >= 0) {
-
-        close(
-            socketFd_
-        );
-
-        socketFd_ = -1;
+    if (socketFd_ < 0) {
+        return;
     }
+
+
+    close(
+        socketFd_
+    );
+
+
+    socketFd_ =
+        -1;
 }
 
 
@@ -182,7 +248,7 @@ bool TcpClient::isConnected() const {
 
 
 // ============================================================
-// Send complete message
+// Send complete frame
 // ============================================================
 
 bool TcpClient::sendAll(
@@ -190,6 +256,7 @@ bool TcpClient::sendAll(
 ) {
 
     if (!isConnected()) {
+
         return false;
     }
 
@@ -212,6 +279,10 @@ bool TcpClient::sendAll(
             );
 
 
+        // ----------------------------------------------------
+        // Successfully sent part of the frame.
+        // ----------------------------------------------------
+
         if (bytesSent > 0) {
 
             totalSent +=
@@ -219,31 +290,68 @@ bool TcpClient::sendAll(
                     bytesSent
                 );
 
+
             continue;
         }
 
 
+        // ----------------------------------------------------
+        // Socket unexpectedly returned zero.
+        // ----------------------------------------------------
+
         if (bytesSent == 0) {
 
+            Logger::instance().warning(
+                "TCP connection closed while sending metrics"
+            );
+
+
             disconnect();
+
 
             return false;
         }
 
 
-        // send < 0
+        // ----------------------------------------------------
+        // send() < 0
+        // ----------------------------------------------------
 
         if (errno == EINTR) {
+
             continue;
         }
 
 
-        // 包括：
-        // EPIPE
-        // ECONNRESET
-        // ENOTCONN
-        // 等连接错误。
+        const int savedErrno =
+            errno;
+
+
+        Logger::instance().warning(
+            "Failed to send metrics to monitoring server " +
+            serverIp_ +
+            ":" +
+            std::to_string(
+                serverPort_
+            ) +
+            ": " +
+            std::string(
+                std::strerror(
+                    savedErrno
+                )
+            )
+        );
+
+
+        // ----------------------------------------------------
+        // Current connection can no longer be trusted.
+        //
+        // MonitorAgent will reconnect according to its
+        // exponential backoff policy.
+        // ----------------------------------------------------
+
         disconnect();
+
 
         return false;
     }
@@ -251,4 +359,3 @@ bool TcpClient::sendAll(
 
     return true;
 }
-
