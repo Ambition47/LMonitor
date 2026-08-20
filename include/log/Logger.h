@@ -1,6 +1,7 @@
 #ifndef LMONITOR_LOGGER_H
 #define LMONITOR_LOGGER_H
 
+#include <cstddef>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -86,7 +87,27 @@ private:
     static std::string detectLogFilePath();
 
 
+    void openLogFile();
+
+
+    void rotateIfNeeded(
+        std::size_t incomingBytes
+    );
+
+
 private:
+    // --------------------------------------------------------
+    // Maximum active log file size:
+    //
+    // 10 MiB
+    // --------------------------------------------------------
+
+    static constexpr std::size_t MAX_LOG_FILE_SIZE =
+        10ULL *
+        1024ULL *
+        1024ULL;
+
+
     std::mutex mutex_;
 
 
@@ -94,6 +115,10 @@ private:
 
 
     std::string logFilePath_;
+
+
+    std::size_t currentFileSize_ =
+        0;
 };
 
 #endif
