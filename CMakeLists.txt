@@ -16,6 +16,7 @@ find_package(
 )
 
 
+
 # ============================================================
 # C++ standard
 # ============================================================
@@ -36,8 +37,9 @@ set(
 )
 
 
+
 # ============================================================
-# Common build options
+# Common compile options
 # ============================================================
 
 add_library(
@@ -64,6 +66,7 @@ target_compile_options(
 )
 
 
+
 # ============================================================
 # Common library
 # ============================================================
@@ -72,12 +75,24 @@ add_library(
     lmonitor_common
     STATIC
 
+
+    # Protocol
+
     src/protocol/FrameCodec.cpp
+
+
+    # Serializer
+
+    src/serializer/MetricsSerializer.cpp
 
     src/serializer/MetricsDeserializer.cpp
 
+
+    # Logger
+
     src/log/Logger.cpp
 )
+
 
 
 target_link_libraries(
@@ -86,6 +101,7 @@ target_link_libraries(
 
     lmonitor_build_options
 )
+
 
 
 # ============================================================
@@ -95,22 +111,42 @@ target_link_libraries(
 add_executable(
     lmonitor_agent
 
+
     src/main.cpp
+
+
+    # Agent
 
     src/agent/MonitorAgent.cpp
 
+
+    # Collector
+
     src/collector/CpuCollector.cpp
+
     src/collector/MemoryCollector.cpp
+
     src/collector/LoadCollector.cpp
+
     src/collector/SystemCollector.cpp
+
     src/collector/DiskCollector.cpp
+
     src/collector/NetworkCollector.cpp
+
     src/collector/ProcessCollector.cpp
+
+
+    # Serializer
 
     src/serializer/MetricsSerializer.cpp
 
+
+    # Network
+
     src/network/TcpClient.cpp
 )
+
 
 
 target_link_libraries(
@@ -118,8 +154,12 @@ target_link_libraries(
     PRIVATE
 
     lmonitor_common
+
     lmonitor_build_options
+
+    Threads::Threads
 )
+
 
 
 # ============================================================
@@ -129,27 +169,73 @@ target_link_libraries(
 add_executable(
     lmonitor_server
 
+
+    # Main
+
     src/server_main.cpp
+
+
+    # Server
 
     src/server/TcpServer.cpp
 
+
+
+    # Reactor
+
     src/reactor/EventLoop.cpp
+
     src/reactor/Channel.cpp
+
     src/reactor/Acceptor.cpp
+
+
+
+    # Network
 
     src/network/TcpConnection.cpp
 
+
+
+    # Thread
+
     src/thread/ThreadPool.cpp
 
+
+
+    # Store
+
     src/store/MetricsStore.cpp
+
+    src/store/StateTracker.cpp
+
+
+
+    # Timer
+
+    src/timer/TimerFd.cpp
+
+
+
+    # HTTP
+
+    src/http/HttpResponse.cpp
+
+    src/http/HttpServer.cpp
 )
+
 
 
 target_link_libraries(
     lmonitor_server
     PRIVATE
 
+
     lmonitor_common
+
+
     lmonitor_build_options
+
+
     Threads::Threads
 )

@@ -1,17 +1,29 @@
 #include "server/TcpServer.h"
 
+
+#include "http/HttpServer.h"
+
 #include "log/Logger.h"
+
 #include "network/TcpConnection.h"
+
 #include "reactor/Acceptor.h"
 #include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
+
 #include "serializer/MetricsDeserializer.h"
+
 #include "store/MetricsStore.h"
+#include "store/StateTracker.h"
+
 #include "thread/ThreadPool.h"
 
+#include "timer/TimerFd.h"
+
+
 #include <cerrno>
-#include <cstddef>
 #include <csignal>
+#include <cstddef>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -19,17 +31,32 @@
 #include <unordered_map>
 #include <utility>
 
+
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
+
 #include <unistd.h>
+
 
 
 namespace {
 
+
 constexpr int MAX_EVENTS =
     64;
 
-}  // namespace
+
+
+constexpr std::size_t WORKER_THREAD_COUNT =
+    4;
+
+
+
+constexpr std::size_t MAX_WORKER_QUEUE_SIZE =
+    1024;
+
+
+}
 
 
 // ============================================================
@@ -39,20 +66,26 @@ constexpr int MAX_EVENTS =
 TcpServer::TcpServer(
     uint16_t port
 )
-    : port_(
-          port
-      ) {
+    :
+    port_(
+        port
+    )
+{
+
 }
 
 
+
 // ============================================================
-// Reactor Server
+// Run Reactor Server
 // ============================================================
 
-void TcpServer::run() {
+void TcpServer::run()
+{
+
 
     // ========================================================
-    // EventLoop
+    // Reactor EventLoop
     // ========================================================
 
     EventLoop eventLoop(
@@ -60,27 +93,46 @@ void TcpServer::run() {
     );
 
 
+
     // ========================================================
-    // MetricsStore
-    //
-    // Declared before ThreadPool so ThreadPool is destroyed
-    // first during shutdown.
+    // Global Metrics Storage
     // ========================================================
 
     MetricsStore metricsStore;
 
 
+
     // ========================================================
-    // Worker ThreadPool
+    // Host State Tracker
     // ========================================================
 
-    constexpr std::size_t WORKER_THREAD_COUNT =
-        4;
+    StateTracker stateTracker;
 
 
-    constexpr std::size_t MAX_WORKER_QUEUE_SIZE =
-        1024;
 
+    // ========================================================
+    // HTTP API Server
+    //
+    // Port:
+    //      8080
+    //
+    // Data source:
+    //      MetricsStore
+    // ========================================================
+
+    HttpServer httpServer(
+        8080,
+        metricsStore
+    );
+
+
+    httpServer.start();
+
+
+
+    // ========================================================
+    // Worker Thread Pool
+    // ========================================================
 
     ThreadPool threadPool(
         WORKER_THREAD_COUNT,
@@ -88,97 +140,231 @@ void TcpServer::run() {
     );
 
 
+
     Logger::instance().info(
-        "Worker thread pool started: threads=" +
+
+        "Worker thread pool started: threads="
+
+        +
+
         std::to_string(
             threadPool.threadCount()
-        ) +
-        ", queue_capacity=" +
+        )
+
+        +
+
+        ", queue_capacity="
+
+        +
+
         std::to_string(
             threadPool.maxQueueSize()
         )
     );
 
 
+
     // ========================================================
-    // Block SIGINT / SIGTERM
+    // TimerFd
+    //
+    // Every 5 seconds:
+    //
+    // Scan MetricsStore
+    // Check ONLINE / STALE / OFFLINE
     // ========================================================
+
+    TimerFd statusTimer;
+
+
+
+    statusTimer.start(
+        5
+    );
+
+
+
+    Channel timerChannel(
+        statusTimer.fd()
+    );
+
+
+
+    timerChannel.setEvents(
+        EPOLLIN
+    );
+
+
+
+    timerChannel.setReadCallback(
+
+        [
+            &metricsStore,
+            &stateTracker
+        ]()
+        {
+
+
+            // consume timer event
+
+            auto hosts =
+                metricsStore.getAll();
+
+
+
+            for (const auto& host :
+                 hosts)
+            {
+
+
+                const auto currentStatus =
+                    metricsStore.getStatus(
+                        host
+                    );
+
+
+
+                const auto stateChange =
+                    stateTracker.update(
+
+                        host.metrics.hostname,
+
+                        currentStatus
+                    );
+
+
+
+                if (!stateChange.changed)
+                {
+                    continue;
+                }
+
+
+
+                Logger::instance().warning(
+
+                    "Host status changed: host="
+
+                    +
+
+                    host.metrics.hostname
+
+                    +
+
+                    ", "
+
+                    +
+
+                    MetricsStore::statusToString(
+
+                        stateChange.oldStatus
+                    )
+
+                    +
+
+                    " -> "
+
+                    +
+
+                    MetricsStore::statusToString(
+
+                        stateChange.newStatus
+                    )
+                );
+
+            }
+
+        }
+
+    );
+
+
+
+    eventLoop.addChannel(
+        &timerChannel
+    );
+
+
+
+    // ========================================================
+    // Signal handling
+    // ========================================================
+
 
     sigset_t signalMask;
 
 
-    if (sigemptyset(
+
+    if (
+        sigemptyset(
             &signalMask
-        ) < 0) {
-
+        )
+        < 0
+    )
+    {
         throw std::runtime_error(
-            "Failed to initialize signal mask"
+            "sigemptyset failed"
         );
     }
 
 
-    if (sigaddset(
-            &signalMask,
-            SIGINT
-        ) < 0) {
 
-        throw std::runtime_error(
-            "Failed to add SIGINT to signal mask"
-        );
-    }
+    sigaddset(
+        &signalMask,
+        SIGINT
+    );
 
 
-    if (sigaddset(
-            &signalMask,
-            SIGTERM
-        ) < 0) {
-
-        throw std::runtime_error(
-            "Failed to add SIGTERM to signal mask"
-        );
-    }
+    sigaddset(
+        &signalMask,
+        SIGTERM
+    );
 
 
-    if (sigprocmask(
+
+    if (
+        sigprocmask(
             SIG_BLOCK,
             &signalMask,
             nullptr
-        ) < 0) {
-
+        )
+        < 0
+    )
+    {
         throw std::runtime_error(
-            "Failed to block server signals"
+            "sigprocmask failed"
         );
     }
 
 
-    // ========================================================
-    // Create signalfd
-    // ========================================================
 
     const int signalFd =
         signalfd(
+
             -1,
+
             &signalMask,
+
             SFD_NONBLOCK |
             SFD_CLOEXEC
         );
 
 
-    if (signalFd < 0) {
 
+    if (
+        signalFd < 0
+    )
+    {
         throw std::runtime_error(
-            "Failed to create signalfd"
+            "signalfd create failed"
         );
     }
 
 
-    // ========================================================
-    // Signal Channel
-    // ========================================================
 
     Channel signalChannel(
         signalFd
     );
+
 
 
     signalChannel.setEvents(
@@ -186,79 +372,69 @@ void TcpServer::run() {
     );
 
 
+
     signalChannel.setReadCallback(
+
         [
             &eventLoop,
             signalFd
-        ]() {
+        ]()
+        {
 
-            while (true) {
-
-                signalfd_siginfo signalInfo {};
+            signalfd_siginfo signalInfo {};
 
 
-                const ssize_t bytesRead =
-                    read(
-                        signalFd,
-                        &signalInfo,
-                        sizeof(signalInfo)
+
+            const ssize_t result =
+                read(
+
+                    signalFd,
+
+                    &signalInfo,
+
+                    sizeof(signalInfo)
+
+                );
+
+
+
+            if (
+                result
+                ==
+                sizeof(signalInfo)
+            )
+            {
+
+                if (
+                    signalInfo.ssi_signo
+                    ==
+                    SIGINT
+
+                    ||
+
+                    signalInfo.ssi_signo
+                    ==
+                    SIGTERM
+                )
+                {
+
+                    Logger::instance().info(
+
+                        "Shutdown signal received"
+
                     );
 
 
-                if (bytesRead ==
-                    static_cast<ssize_t>(
-                        sizeof(signalInfo)
-                    )) {
+                    eventLoop.quit();
 
-                    if (signalInfo.ssi_signo ==
-                            SIGINT ||
-                        signalInfo.ssi_signo ==
-                            SIGTERM) {
-
-                        Logger::instance().info(
-                            "Shutdown signal received, "
-                            "stopping Reactor Server"
-                        );
-
-
-                        eventLoop.quit();
-
-                        return;
-                    }
-
-
-                    continue;
                 }
 
-
-                if (bytesRead < 0) {
-
-                    if (errno == EINTR) {
-
-                        continue;
-                    }
-
-
-                    if (errno == EAGAIN ||
-                        errno == EWOULDBLOCK) {
-
-                        return;
-                    }
-
-
-                    Logger::instance().error(
-                        "Failed to read signalfd"
-                    );
-
-
-                    return;
-                }
-
-
-                return;
             }
+
         }
+
     );
+
 
 
     eventLoop.addChannel(
@@ -266,14 +442,19 @@ void TcpServer::run() {
     );
 
 
+
     // ========================================================
-    // Active TCP connections
+    // Connection container
     // ========================================================
 
     std::unordered_map<
+
         int,
+
         std::unique_ptr<TcpConnection>
+
     > connections;
+
 
 
     // ========================================================
@@ -281,444 +462,620 @@ void TcpServer::run() {
     // ========================================================
 
     Acceptor acceptor(
+
         eventLoop,
+
         port_
+
     );
 
 
-    // ========================================================
-    // New connection callback
-    // ========================================================
 
-    acceptor.setNewConnectionCallback(
-        [
-            &eventLoop,
-            &threadPool,
-            &metricsStore,
-            &connections
-        ](
-            int clientFd,
-            const std::string& clientName
-        ) {
+    Logger::instance().info(
 
-            // ------------------------------------------------
-            // Defensive duplicate fd check
-            // ------------------------------------------------
+        "LMonitor Reactor Server listening on port "
 
-            if (connections.find(
-                    clientFd
-                ) != connections.end()) {
+        +
 
-                Logger::instance().error(
-                    "Duplicate connection fd: " +
-                    std::to_string(
-                        clientFd
-                    )
+        std::to_string(
+            port_
+        )
+
+    );
+
+
+
+    // 后续部分：
+ // ========================================================
+// New connection callback
+// ========================================================
+
+acceptor.setNewConnectionCallback(
+
+    [
+        &eventLoop,
+        &threadPool,
+        &metricsStore,
+        &stateTracker,
+        &connections
+    ]
+    (
+        int clientFd,
+        const std::string& clientName
+    )
+    {
+
+
+        Logger::instance().info(
+
+            "Client connected: "
+
+            +
+
+            clientName
+
+            +
+
+            ", fd="
+
+            +
+
+            std::to_string(
+                clientFd
+            )
+
+        );
+
+
+
+        std::unique_ptr<TcpConnection>
+            connection;
+
+
+
+        try
+        {
+
+            connection =
+                std::make_unique<TcpConnection>(
+
+                    eventLoop,
+
+                    clientFd,
+
+                    clientName
+
                 );
 
+        }
+        catch(
+            const std::exception& e
+        )
+        {
 
-                close(
-                    clientFd
-                );
+            Logger::instance().error(
 
+                "Create TcpConnection failed: "
 
-                return;
-            }
+                +
 
+                std::string(
+                    e.what()
+                )
 
-            // =================================================
-            // Create TcpConnection
-            // =================================================
-
-            std::unique_ptr<TcpConnection>
-                connection;
-
-
-            try {
-
-                connection =
-                    std::make_unique<TcpConnection>(
-                        eventLoop,
-                        clientFd,
-                        clientName
-                    );
-
-            } catch (
-                const std::exception& e
-            ) {
-
-                Logger::instance().error(
-                    "Failed to create TcpConnection: " +
-                    std::string(
-                        e.what()
-                    )
-                );
-
-
-                close(
-                    clientFd
-                );
-
-
-                return;
-            }
-
-
-            // =================================================
-            // Metrics message callback
-            // =================================================
-
-            connection->setMessageCallback(
-                [
-                    &threadPool,
-                    &metricsStore,
-                    &eventLoop
-                ](
-                    const std::string& name,
-                    const std::string& message
-                ) {
-
-                    const std::string clientName =
-                        name;
-
-
-                    const std::string metricsMessage =
-                        message;
-
-
-                    const bool submitted =
-                        threadPool.trySubmit(
-                            [
-                                &metricsStore,
-                                &eventLoop,
-                                clientName,
-                                metricsMessage
-                            ]() {
-
-                                // =================================
-                                // Worker:
-                                // deserialize and validate payload
-                                // =================================
-
-                                SystemMetrics metrics;
-
-
-                                try {
-
-                                    MetricsDeserializer
-                                        deserializer;
-
-
-                                    metrics =
-                                        deserializer.deserialize(
-                                            metricsMessage
-                                        );
-
-                                } catch (
-                                    const std::exception& e
-                                ) {
-
-                                    Logger::instance().warning(
-                                        "Rejected invalid metrics from " +
-                                        clientName +
-                                        ": " +
-                                        std::string(
-                                            e.what()
-                                        )
-                                    );
-
-
-                                    return;
-                                }
-
-
-                                // =================================
-                                // Extract lightweight values before
-                                // moving metrics into MetricsStore.
-                                // =================================
-
-                                const std::string hostname =
-                                    metrics.hostname;
-
-
-                                const double cpuUsagePercent =
-                                    metrics.cpuUsagePercent;
-
-
-                                const double memoryUsagePercent =
-                                    metrics.memoryUsagePercent;
-
-
-                                const double load1 =
-                                    metrics.load1;
-
-
-                                const std::size_t processCount =
-                                    metrics.topProcesses.size();
-
-
-                                // =================================
-                                // Update latest snapshot
-                                // =================================
-
-                                try {
-
-                                    metricsStore.update(
-                                        std::move(
-                                            metrics
-                                        )
-                                    );
-
-                                } catch (
-                                    const std::exception& e
-                                ) {
-
-                                    Logger::instance().error(
-                                        "Failed to store metrics from " +
-                                        clientName +
-                                        ": " +
-                                        std::string(
-                                            e.what()
-                                        )
-                                    );
-
-
-                                    return;
-                                }
-
-
-                                // =================================
-                                // Get current host status
-                                // =================================
-
-                                MetricsStore::HostStatus
-                                    hostStatus =
-                                        MetricsStore::HostStatus::Offline;
-
-
-                                if (!metricsStore.getStatus(
-                                        hostname,
-                                        hostStatus
-                                    )) {
-
-                                    Logger::instance().error(
-                                        "Stored host unexpectedly missing from MetricsStore: " +
-                                        hostname
-                                    );
-
-
-                                    return;
-                                }
-
-
-                                const std::string statusText =
-                                    MetricsStore::statusToString(
-                                        hostStatus
-                                    );
-
-
-                                const std::size_t monitoredHostCount =
-                                    metricsStore.size();
-
-
-                                // =================================
-                                // Return lightweight result to Reactor
-                                // =================================
-
-                                eventLoop.queueInLoop(
-                                    [
-                                        clientName,
-                                        hostname,
-                                        statusText,
-                                        cpuUsagePercent,
-                                        memoryUsagePercent,
-                                        load1,
-                                        processCount,
-                                        monitoredHostCount
-                                    ]() {
-
-                                        Logger::instance().info(
-                                            "Metrics stored: client=" +
-                                            clientName +
-                                            ", host=" +
-                                            hostname +
-                                            ", status=" +
-                                            statusText +
-                                            ", cpu=" +
-                                            std::to_string(
-                                                cpuUsagePercent
-                                            ) +
-                                            "%, memory=" +
-                                            std::to_string(
-                                                memoryUsagePercent
-                                            ) +
-                                            "%, load1=" +
-                                            std::to_string(
-                                                load1
-                                            ) +
-                                            ", processes=" +
-                                            std::to_string(
-                                                processCount
-                                            ) +
-                                            ", monitored_hosts=" +
-                                            std::to_string(
-                                                monitoredHostCount
-                                            )
-                                        );
-                                    }
-                                );
-                            }
-                        );
-
-
-                    // =========================================
-                    // Backpressure
-                    // =========================================
-
-                    if (!submitted) {
-
-                        Logger::instance().warning(
-                            "Worker queue full, dropping metrics from " +
-                            clientName +
-                            ", pending=" +
-                            std::to_string(
-                                threadPool.queueSize()
-                            ) +
-                            "/" +
-                            std::to_string(
-                                threadPool.maxQueueSize()
-                            )
-                        );
-                    }
-                }
             );
 
 
-            // =================================================
-            // Connection close callback
-            // =================================================
+            close(
+                clientFd
+            );
 
-            connection->setCloseCallback(
-                [
-                    &eventLoop,
-                    &connections
-                ](
-                    int fd
-                ) {
 
-                    eventLoop.queueInLoop(
+            return;
+        }
+
+
+
+        // ====================================================
+        // Receive metrics callback
+        //
+        // Reactor:
+        //      receive TCP data
+        //
+        // Worker:
+        //      deserialize
+        //      update MetricsStore
+        //
+        // Reactor:
+        //      print result
+        // ====================================================
+
+
+        connection->setMessageCallback(
+
+            [
+                &threadPool,
+                &metricsStore,
+                &stateTracker,
+                &eventLoop
+            ]
+            (
+                const std::string& name,
+                const std::string& message
+            )
+            {
+
+
+                const std::string clientName =
+                    name;
+
+
+
+                const std::string metricsMessage =
+                    message;
+
+
+
+                const bool submitted =
+
+                    threadPool.trySubmit(
+
                         [
-                            &connections,
-                            fd
-                        ]() {
 
-                            const auto connectionIt =
-                                connections.find(
-                                    fd
+                            &metricsStore,
+
+                            &stateTracker,
+
+                            &eventLoop,
+
+                            clientName,
+
+                            metricsMessage
+
+                        ]()
+                        {
+
+
+                            SystemMetrics metrics;
+
+
+
+                            try
+                            {
+
+                                MetricsDeserializer deserializer;
+
+
+
+                                metrics =
+
+                                    deserializer.deserialize(
+
+                                        metricsMessage
+
+                                    );
+
+                            }
+                            catch(
+                                const std::exception& e
+                            )
+                            {
+
+                                Logger::instance().warning(
+
+                                    "Invalid metrics from "
+
+                                    +
+
+                                    clientName
+
+                                    +
+
+                                    ": "
+
+                                    +
+
+                                    e.what()
+
                                 );
 
-
-                            if (connectionIt ==
-                                connections.end()) {
 
                                 return;
                             }
 
 
-                            Logger::instance().info(
-                                "Client disconnected: " +
-                                connectionIt
-                                    ->second
-                                    ->clientName() +
-                                ", fd=" +
-                                std::to_string(
-                                    fd
-                                )
+
+
+                            const std::string hostname =
+
+                                metrics.hostname;
+
+
+
+                            const double cpu =
+
+                                metrics.cpuUsagePercent;
+
+
+
+                            const double memory =
+
+                                metrics.memoryUsagePercent;
+
+
+
+                            const double load1 =
+
+                                metrics.load1;
+
+
+
+                            const std::size_t processCount =
+
+                                metrics.topProcesses.size();
+
+
+
+
+                            // ====================================
+                            // Store latest snapshot
+                            // ====================================
+
+
+                            try
+                            {
+
+                                metricsStore.update(
+
+                                    std::move(
+                                        metrics
+                                    )
+
+                                );
+
+                            }
+                            catch(
+                                const std::exception& e
+                            )
+                            {
+
+                                Logger::instance().error(
+
+                                    "Store metrics failed: "
+
+                                    +
+
+                                    std::string(
+                                        e.what()
+                                    )
+
+                                );
+
+
+                                return;
+                            }
+
+
+
+
+
+                            // ====================================
+                            // First ONLINE state
+                            // ====================================
+
+
+                            const auto change =
+
+                                stateTracker.update(
+
+                                    hostname,
+
+                                    MetricsStore::HostStatus::Online
+
+                                );
+
+
+
+                            if(change.changed)
+                            {
+
+                                Logger::instance().info(
+
+                                    "Host state initialized: "
+
+                                    +
+
+                                    hostname
+
+                                    +
+
+                                    " -> "
+
+                                    +
+
+                                    MetricsStore::statusToString(
+
+                                        change.newStatus
+
+                                    )
+
+                                );
+                            }
+
+
+
+
+
+                            // ====================================
+                            // Return to Reactor thread
+                            // ====================================
+
+
+                            eventLoop.queueInLoop(
+
+                                [
+
+                                    clientName,
+
+                                    hostname,
+
+                                    cpu,
+
+                                    memory,
+
+                                    load1,
+
+                                    processCount
+
+                                ]()
+                                {
+
+
+                                    Logger::instance().info(
+
+                                        "Metrics stored: host="
+
+                                        +
+
+                                        hostname
+
+                                        +
+
+                                        ", cpu="
+
+                                        +
+
+                                        std::to_string(
+                                            cpu
+                                        )
+
+                                        +
+
+                                        "%, memory="
+
+                                        +
+
+                                        std::to_string(
+                                            memory
+                                        )
+
+                                        +
+
+                                        "%, load1="
+
+                                        +
+
+                                        std::to_string(
+                                            load1
+                                        )
+
+                                        +
+
+                                        ", processes="
+
+                                        +
+
+                                        std::to_string(
+                                            processCount
+                                        )
+
+                                    );
+
+                                }
+
                             );
 
 
-                            connections.erase(
-                                connectionIt
-                            );
                         }
+
                     );
+
+
+
+
+
+                if(!submitted)
+                {
+
+                    Logger::instance().warning(
+
+                        "Worker queue full, drop metrics from "
+
+                        +
+
+                        clientName
+
+                    );
+
                 }
-            );
 
-
-            // =================================================
-            // Store connection ownership
-            // =================================================
-
-            const auto result =
-                connections.emplace(
-                    clientFd,
-                    std::move(
-                        connection
-                    )
-                );
-
-
-            if (!result.second) {
-
-                Logger::instance().error(
-                    "Failed to store TcpConnection: fd=" +
-                    std::to_string(
-                        clientFd
-                    )
-                );
-
-
-                return;
             }
 
-
-            Logger::instance().info(
-                "Client connected: " +
-                clientName +
-                ", fd=" +
-                std::to_string(
-                    clientFd
-                )
-            );
-        }
-    );
+        );
 
 
-    // ========================================================
-    // Start Reactor
-    // ========================================================
-
-    Logger::instance().info(
-        "LMonitor Reactor Server listening on port " +
-        std::to_string(
-            port_
-        )
-    );
 
 
-    eventLoop.loop();
 
 
-    // ========================================================
-    // Reactor stopped
-    // ========================================================
-
-    eventLoop.removeChannel(
-        &signalChannel
-    );
+        // ====================================================
+        // Connection close callback
+        // ====================================================
 
 
-    close(
-        signalFd
-    );
+        connection->setCloseCallback(
+
+            [
+
+                &connections
+
+            ]
+
+            (
+
+                int fd
+
+            )
+
+            {
 
 
-    Logger::instance().info(
-        "LMonitor Reactor Server stopped gracefully: "
-        "monitored_hosts=" +
-        std::to_string(
-            metricsStore.size()
-        )
-    );
+                auto iterator =
+
+                    connections.find(
+                        fd
+                    );
+
+
+
+                if(iterator != connections.end())
+                {
+
+                    Logger::instance().info(
+
+                        "Client disconnected fd="
+
+                        +
+
+                        std::to_string(
+                            fd
+                        )
+
+                    );
+
+
+                    connections.erase(
+                        iterator
+                    );
+
+                }
+
+            }
+
+        );
+
+
+
+
+
+        // ====================================================
+        // Save connection ownership
+        // ====================================================
+
+
+        connections.emplace(
+
+            clientFd,
+
+            std::move(
+                connection
+            )
+
+        );
+
+
+
+    }
+
+);
+
+
+
+
+
+// ============================================================
+// Start Reactor loop
+// ============================================================
+
+
+eventLoop.loop();
+
+
+
+
+
+// ============================================================
+// Shutdown
+// ============================================================
+
+
+Logger::instance().info(
+
+    "Stopping LMonitor Server..."
+
+);
+
+
+
+
+
+// HTTP shutdown
+
+httpServer.stop();
+
+
+
+
+
+// Timer shutdown
+
+statusTimer.stop();
+
+
+
+
+
+eventLoop.removeChannel(
+
+    &timerChannel
+
+);
+
+
+
+eventLoop.removeChannel(
+
+    &signalChannel
+
+);
+
+
+
+close(
+
+    signalFd
+
+);
+
+
+
+
+
+Logger::instance().info(
+
+    "LMonitor Server stopped gracefully"
+
+);
+
+
 }
