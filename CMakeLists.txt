@@ -140,6 +140,8 @@ add_executable(
     src/network/TcpConnection.cpp
 
     src/thread/ThreadPool.cpp
+
+    src/store/MetricsStore.cpp
 )
 
 

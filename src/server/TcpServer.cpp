@@ -6,6 +6,7 @@
 #include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
 #include "serializer/MetricsDeserializer.h"
+#include "store/MetricsStore.h"
 #include "thread/ThreadPool.h"
 
 #include <cerrno>
@@ -16,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -37,7 +39,9 @@ constexpr int MAX_EVENTS =
 TcpServer::TcpServer(
     uint16_t port
 )
-    : port_(port) {
+    : port_(
+          port
+      ) {
 }
 
 
@@ -54,6 +58,21 @@ void TcpServer::run() {
     EventLoop eventLoop(
         MAX_EVENTS
     );
+
+
+    // ========================================================
+    // MetricsStore
+    //
+    // IMPORTANT:
+    // MetricsStore is declared before ThreadPool so that
+    // ThreadPool is destroyed first during shutdown.
+    //
+    // Worker tasks capture MetricsStore by reference.
+    // Therefore all workers must finish before MetricsStore
+    // itself is destroyed.
+    // ========================================================
+
+    MetricsStore metricsStore;
 
 
     // ========================================================
@@ -138,7 +157,7 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // signalfd
+    // Create signalfd
     // ========================================================
 
     const int signalFd =
@@ -157,6 +176,10 @@ void TcpServer::run() {
         );
     }
 
+
+    // ========================================================
+    // Signal Channel
+    // ========================================================
 
     Channel signalChannel(
         signalFd
@@ -216,6 +239,7 @@ void TcpServer::run() {
                 if (bytesRead < 0) {
 
                     if (errno == EINTR) {
+
                         continue;
                     }
 
@@ -248,7 +272,7 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Active connections
+    // Active TCP connections
     // ========================================================
 
     std::unordered_map<
@@ -275,6 +299,7 @@ void TcpServer::run() {
         [
             &eventLoop,
             &threadPool,
+            &metricsStore,
             &connections
         ](
             int clientFd,
@@ -345,21 +370,24 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Metrics message callback
+            // Complete metrics message callback
             //
-            // Reactor:
-            //     receives complete framed message
+            // Reactor thread:
+            //     receives complete payload
             //
-            // Worker:
-            //     validates and deserializes payload
+            // Worker thread:
+            //     deserialize
+            //     validate
+            //     update MetricsStore
             //
-            // Reactor:
-            //     receives lightweight processing result
+            // Reactor thread:
+            //     log lightweight processing result
             // =================================================
 
             connection->setMessageCallback(
                 [
                     &threadPool,
+                    &metricsStore,
                     &eventLoop
                 ](
                     const std::string& name,
@@ -377,14 +405,15 @@ void TcpServer::run() {
                     const bool submitted =
                         threadPool.trySubmit(
                             [
+                                &metricsStore,
                                 &eventLoop,
                                 clientName,
                                 metricsMessage
                             ]() {
 
                                 // =================================
-                                // Worker thread:
-                                // deserialize and validate metrics
+                                // Worker:
+                                // deserialize and validate payload
                                 // =================================
 
                                 SystemMetrics metrics;
@@ -420,11 +449,8 @@ void TcpServer::run() {
 
 
                                 // =================================
-                                // Extract only lightweight summary
-                                // values before returning to Reactor.
-                                //
-                                // Do not move the entire SystemMetrics
-                                // structure back unless it is needed.
+                                // Extract lightweight summary before
+                                // moving the metrics object into store.
                                 // =================================
 
                                 const std::string hostname =
@@ -448,7 +474,47 @@ void TcpServer::run() {
 
 
                                 // =================================
-                                // Return processing result to Reactor
+                                // Store latest metrics by hostname.
+                                //
+                                // Existing host:
+                                //     overwrite previous snapshot
+                                //
+                                // New host:
+                                //     insert new snapshot
+                                // =================================
+
+                                try {
+
+                                    metricsStore.update(
+                                        std::move(
+                                            metrics
+                                        )
+                                    );
+
+                                } catch (
+                                    const std::exception& e
+                                ) {
+
+                                    Logger::instance().error(
+                                        "Failed to store metrics from " +
+                                        clientName +
+                                        ": " +
+                                        std::string(
+                                            e.what()
+                                        )
+                                    );
+
+
+                                    return;
+                                }
+
+
+                                const std::size_t monitoredHostCount =
+                                    metricsStore.size();
+
+
+                                // =================================
+                                // Return lightweight result to Reactor
                                 // =================================
 
                                 eventLoop.queueInLoop(
@@ -458,11 +524,12 @@ void TcpServer::run() {
                                         cpuUsagePercent,
                                         memoryUsagePercent,
                                         load1,
-                                        processCount
+                                        processCount,
+                                        monitoredHostCount
                                     ]() {
 
                                         Logger::instance().info(
-                                            "Metrics parsed: client=" +
+                                            "Metrics stored: client=" +
                                             clientName +
                                             ", host=" +
                                             hostname +
@@ -481,6 +548,10 @@ void TcpServer::run() {
                                             ", processes=" +
                                             std::to_string(
                                                 processCount
+                                            ) +
+                                            ", monitored_hosts=" +
+                                            std::to_string(
+                                                monitoredHostCount
                                             )
                                         );
                                     }
@@ -565,7 +636,7 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Store connection ownership
+            // Store TcpConnection ownership
             // =================================================
 
             const auto result =
@@ -633,6 +704,10 @@ void TcpServer::run() {
 
 
     Logger::instance().info(
-        "LMonitor Reactor Server stopped gracefully"
+        "LMonitor Reactor Server stopped gracefully: "
+        "monitored_hosts=" +
+        std::to_string(
+            metricsStore.size()
+        )
     );
 }
