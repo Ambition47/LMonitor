@@ -63,13 +63,8 @@ void TcpServer::run() {
     // ========================================================
     // MetricsStore
     //
-    // IMPORTANT:
-    // MetricsStore is declared before ThreadPool so that
-    // ThreadPool is destroyed first during shutdown.
-    //
-    // Worker tasks capture MetricsStore by reference.
-    // Therefore all workers must finish before MetricsStore
-    // itself is destroyed.
+    // Declared before ThreadPool so ThreadPool is destroyed
+    // first during shutdown.
     // ========================================================
 
     MetricsStore metricsStore;
@@ -370,18 +365,7 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Complete metrics message callback
-            //
-            // Reactor thread:
-            //     receives complete payload
-            //
-            // Worker thread:
-            //     deserialize
-            //     validate
-            //     update MetricsStore
-            //
-            // Reactor thread:
-            //     log lightweight processing result
+            // Metrics message callback
             // =================================================
 
             connection->setMessageCallback(
@@ -449,8 +433,8 @@ void TcpServer::run() {
 
 
                                 // =================================
-                                // Extract lightweight summary before
-                                // moving the metrics object into store.
+                                // Extract lightweight values before
+                                // moving metrics into MetricsStore.
                                 // =================================
 
                                 const std::string hostname =
@@ -474,13 +458,7 @@ void TcpServer::run() {
 
 
                                 // =================================
-                                // Store latest metrics by hostname.
-                                //
-                                // Existing host:
-                                //     overwrite previous snapshot
-                                //
-                                // New host:
-                                //     insert new snapshot
+                                // Update latest snapshot
                                 // =================================
 
                                 try {
@@ -509,6 +487,36 @@ void TcpServer::run() {
                                 }
 
 
+                                // =================================
+                                // Get current host status
+                                // =================================
+
+                                MetricsStore::HostStatus
+                                    hostStatus =
+                                        MetricsStore::HostStatus::Offline;
+
+
+                                if (!metricsStore.getStatus(
+                                        hostname,
+                                        hostStatus
+                                    )) {
+
+                                    Logger::instance().error(
+                                        "Stored host unexpectedly missing from MetricsStore: " +
+                                        hostname
+                                    );
+
+
+                                    return;
+                                }
+
+
+                                const std::string statusText =
+                                    MetricsStore::statusToString(
+                                        hostStatus
+                                    );
+
+
                                 const std::size_t monitoredHostCount =
                                     metricsStore.size();
 
@@ -521,6 +529,7 @@ void TcpServer::run() {
                                     [
                                         clientName,
                                         hostname,
+                                        statusText,
                                         cpuUsagePercent,
                                         memoryUsagePercent,
                                         load1,
@@ -533,6 +542,8 @@ void TcpServer::run() {
                                             clientName +
                                             ", host=" +
                                             hostname +
+                                            ", status=" +
+                                            statusText +
                                             ", cpu=" +
                                             std::to_string(
                                                 cpuUsagePercent
@@ -636,7 +647,7 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Store TcpConnection ownership
+            // Store connection ownership
             // =================================================
 
             const auto result =

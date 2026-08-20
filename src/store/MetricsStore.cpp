@@ -1,5 +1,6 @@
 #include "store/MetricsStore.h"
 
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
@@ -13,8 +14,7 @@ void MetricsStore::update(
 ) {
 
     // --------------------------------------------------------
-    // hostname is the unique identity used by the current
-    // in-memory store.
+    // hostname is the current unique identity for one Agent.
     // --------------------------------------------------------
 
     if (metrics.hostname.empty()) {
@@ -43,8 +43,8 @@ void MetricsStore::update(
 
 
     // --------------------------------------------------------
-    // Multiple Worker threads may update the store
-    // concurrently.
+    // Multiple Worker threads may update different hosts at
+    // the same time.
     // --------------------------------------------------------
 
     std::lock_guard<std::mutex>
@@ -130,6 +130,122 @@ MetricsStore::getAll() const {
 
 
     return result;
+}
+
+
+// ============================================================
+// Determine status from one StoredMetrics snapshot
+// ============================================================
+
+MetricsStore::HostStatus
+MetricsStore::getStatus(
+    const StoredMetrics& storedMetrics
+) const {
+
+    const auto now =
+        std::chrono::system_clock::now();
+
+
+    // --------------------------------------------------------
+    // Protect against unexpected clock adjustments.
+    //
+    // If updatedAt appears to be in the future, treat the
+    // record as freshly updated instead of calculating a
+    // negative age.
+    // --------------------------------------------------------
+
+    if (storedMetrics.updatedAt >
+        now) {
+
+        return HostStatus::Online;
+    }
+
+
+    const auto age =
+        std::chrono::duration_cast<
+            std::chrono::seconds
+        >(
+            now -
+            storedMetrics.updatedAt
+        );
+
+
+    if (age <=
+        ONLINE_THRESHOLD) {
+
+        return HostStatus::Online;
+    }
+
+
+    if (age <=
+        STALE_THRESHOLD) {
+
+        return HostStatus::Stale;
+    }
+
+
+    return HostStatus::Offline;
+}
+
+
+// ============================================================
+// Query status directly by hostname
+// ============================================================
+
+bool MetricsStore::getStatus(
+    const std::string& hostname,
+    HostStatus& status
+) const {
+
+    StoredMetrics storedMetrics;
+
+
+    if (!getLatest(
+            hostname,
+            storedMetrics
+        )) {
+
+        return false;
+    }
+
+
+    status =
+        getStatus(
+            storedMetrics
+        );
+
+
+    return true;
+}
+
+
+// ============================================================
+// Status to readable string
+// ============================================================
+
+const char* MetricsStore::statusToString(
+    HostStatus status
+) noexcept {
+
+    switch (status) {
+
+        case HostStatus::Online:
+
+            return "ONLINE";
+
+
+        case HostStatus::Stale:
+
+            return "STALE";
+
+
+        case HostStatus::Offline:
+
+            return "OFFLINE";
+    }
+
+
+    return "UNKNOWN";
 }
 
 
