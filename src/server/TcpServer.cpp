@@ -1,22 +1,20 @@
 #include "server/TcpServer.h"
+
 #include "log/Logger.h"
-
-
 #include "network/TcpConnection.h"
 #include "reactor/Acceptor.h"
 #include "reactor/Channel.h"
 #include "reactor/EventLoop.h"
+#include "serializer/MetricsDeserializer.h"
 #include "thread/ThreadPool.h"
 
-#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <csignal>
-#include <iostream>
+#include <exception>
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <unordered_map>
 
 #include <sys/epoll.h>
@@ -59,20 +57,6 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Record Reactor thread id
-    // ========================================================
-
-    const std::thread::id eventLoopThreadId =
-        std::this_thread::get_id();
-
-
-    std::cout
-        << "[Reactor] EventLoop thread id: "
-        << eventLoopThreadId
-        << '\n';
-
-
-    // ========================================================
     // Worker ThreadPool
     // ========================================================
 
@@ -90,19 +74,20 @@ void TcpServer::run() {
     );
 
 
-    std::cout
-        << "Worker thread pool started with "
-        << threadPool.threadCount()
-        << " threads, queue capacity="
-        << threadPool.maxQueueSize()
-        << ".\n";
+    Logger::instance().info(
+        "Worker thread pool started: threads=" +
+        std::to_string(
+            threadPool.threadCount()
+        ) +
+        ", queue_capacity=" +
+        std::to_string(
+            threadPool.maxQueueSize()
+        )
+    );
 
 
     // ========================================================
     // Block SIGINT / SIGTERM
-    //
-    // These signals will be handled through signalfd
-    // instead of traditional asynchronous signal handlers.
     // ========================================================
 
     sigset_t signalMask;
@@ -153,7 +138,7 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Create signalfd
+    // signalfd
     // ========================================================
 
     const int signalFd =
@@ -172,10 +157,6 @@ void TcpServer::run() {
         );
     }
 
-
-    // ========================================================
-    // Signal Channel
-    // ========================================================
 
     Channel signalChannel(
         signalFd
@@ -216,9 +197,10 @@ void TcpServer::run() {
                         signalInfo.ssi_signo ==
                             SIGTERM) {
 
-                        std::cout
-                            << "\nShutdown signal received. "
-                            << "Stopping Reactor Server...\n";
+                        Logger::instance().info(
+                            "Shutdown signal received, "
+                            "stopping Reactor Server"
+                        );
 
 
                         eventLoop.quit();
@@ -234,7 +216,6 @@ void TcpServer::run() {
                 if (bytesRead < 0) {
 
                     if (errno == EINTR) {
-
                         continue;
                     }
 
@@ -247,8 +228,9 @@ void TcpServer::run() {
 
 
                     Logger::instance().error(
-    "Failed to read signalfd"
-);
+                        "Failed to read signalfd"
+                    );
+
 
                     return;
                 }
@@ -266,9 +248,7 @@ void TcpServer::run() {
 
 
     // ========================================================
-    // Active TCP connections
-    //
-    // fd -> TcpConnection
+    // Active connections
     // ========================================================
 
     std::unordered_map<
@@ -295,8 +275,7 @@ void TcpServer::run() {
         [
             &eventLoop,
             &threadPool,
-            &connections,
-            eventLoopThreadId
+            &connections
         ](
             int clientFd,
             const std::string& clientName
@@ -310,10 +289,12 @@ void TcpServer::run() {
                     clientFd
                 ) != connections.end()) {
 
-                std::cerr
-                    << "Duplicate connection fd: "
-                    << clientFd
-                    << '\n';
+                Logger::instance().error(
+                    "Duplicate connection fd: " +
+                    std::to_string(
+                        clientFd
+                    )
+                );
 
 
                 close(
@@ -346,10 +327,12 @@ void TcpServer::run() {
                 const std::exception& e
             ) {
 
-                std::cerr
-                    << "Failed to create TcpConnection: "
-                    << e.what()
-                    << '\n';
+                Logger::instance().error(
+                    "Failed to create TcpConnection: " +
+                    std::string(
+                        e.what()
+                    )
+                );
 
 
                 close(
@@ -362,44 +345,26 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Complete metrics message callback
+            // Metrics message callback
             //
-            // This callback runs in the EventLoop thread.
+            // Reactor:
+            //     receives complete framed message
+            //
+            // Worker:
+            //     validates and deserializes payload
+            //
+            // Reactor:
+            //     receives lightweight processing result
             // =================================================
 
             connection->setMessageCallback(
                 [
                     &threadPool,
-                    &eventLoop,
-                    eventLoopThreadId
+                    &eventLoop
                 ](
                     const std::string& name,
                     const std::string& message
                 ) {
-
-                    // =========================================
-                    // Verify that network callback is running
-                    // in Reactor thread.
-                    // =========================================
-
-                    const std::thread::id currentThreadId =
-                        std::this_thread::get_id();
-
-
-                    std::cout
-                        << "[I/O] Message received on thread: "
-                        << currentThreadId
-                        << "  EventLoop thread: "
-                        << eventLoopThreadId
-                        << '\n';
-
-
-                    // =========================================
-                    // Copy message data before handing it to
-                    // a Worker thread.
-                    //
-                    // Never capture these references directly.
-                    // =========================================
 
                     const std::string clientName =
                         name;
@@ -409,124 +374,115 @@ void TcpServer::run() {
                         message;
 
 
-                    // =========================================
-                    // Submit to bounded worker queue.
-                    // =========================================
-
                     const bool submitted =
                         threadPool.trySubmit(
                             [
                                 &eventLoop,
                                 clientName,
-                                metricsMessage,
-                                eventLoopThreadId
+                                metricsMessage
                             ]() {
 
                                 // =================================
-                                // Worker Thread
+                                // Worker thread:
+                                // deserialize and validate metrics
                                 // =================================
 
-                                const std::thread::id workerThreadId =
-                                    std::this_thread::get_id();
+                                SystemMetrics metrics;
 
 
-                                std::cout
-                                    << "[Worker] Processing metrics on thread: "
-                                    << workerThreadId
-                                    << '\n';
+                                try {
+
+                                    MetricsDeserializer
+                                        deserializer;
 
 
-                                // =================================
-                                // Temporary worker processing.
-                                //
-                                // Later this can become:
-                                //
-                                // protocol parsing
-                                // aggregation
-                                // database storage
-                                // alert evaluation
-                                // =================================
+                                    metrics =
+                                        deserializer.deserialize(
+                                            metricsMessage
+                                        );
 
-                                const std::size_t messageBytes =
-                                    metricsMessage.size();
+                                } catch (
+                                    const std::exception& e
+                                ) {
 
-
-                                const std::size_t lineCount =
-                                    static_cast<std::size_t>(
-                                        std::count(
-                                            metricsMessage.begin(),
-                                            metricsMessage.end(),
-                                            '\n'
+                                    Logger::instance().warning(
+                                        "Rejected invalid metrics from " +
+                                        clientName +
+                                        ": " +
+                                        std::string(
+                                            e.what()
                                         )
                                     );
 
 
+                                    return;
+                                }
+
+
                                 // =================================
-                                // Return result to EventLoop thread.
+                                // Extract only lightweight summary
+                                // values before returning to Reactor.
                                 //
-                                // queueInLoop()
-                                //     ↓
-                                // eventfd
-                                //     ↓
-                                // epoll wakeup
-                                //     ↓
-                                // Reactor thread
+                                // Do not move the entire SystemMetrics
+                                // structure back unless it is needed.
+                                // =================================
+
+                                const std::string hostname =
+                                    metrics.hostname;
+
+
+                                const double cpuUsagePercent =
+                                    metrics.cpuUsagePercent;
+
+
+                                const double memoryUsagePercent =
+                                    metrics.memoryUsagePercent;
+
+
+                                const double load1 =
+                                    metrics.load1;
+
+
+                                const std::size_t processCount =
+                                    metrics.topProcesses.size();
+
+
+                                // =================================
+                                // Return processing result to Reactor
                                 // =================================
 
                                 eventLoop.queueInLoop(
                                     [
                                         clientName,
-                                        metricsMessage,
-                                        messageBytes,
-                                        lineCount,
-                                        workerThreadId,
-                                        eventLoopThreadId
+                                        hostname,
+                                        cpuUsagePercent,
+                                        memoryUsagePercent,
+                                        load1,
+                                        processCount
                                     ]() {
 
-                                        const std::thread::id
-                                            callbackThreadId =
-                                                std::this_thread::get_id();
-
-
-                                        std::cout
-                                            << "[Reactor Callback] thread: "
-                                            << callbackThreadId
-                                            << "  worker was: "
-                                            << workerThreadId
-                                            << "  expected EventLoop: "
-                                            << eventLoopThreadId
-                                            << '\n';
-
-
-                                        std::cout
-                                            << "\n"
-                                            << "========== Metrics Processed ==========\n";
-
-
-                                        std::cout
-                                            << "Client: "
-                                            << clientName
-                                            << '\n';
-
-
-                                        std::cout
-                                            << "Message bytes: "
-                                            << messageBytes
-                                            << '\n';
-
-
-                                        std::cout
-                                            << "Message lines: "
-                                            << lineCount
-                                            << '\n';
-
-
-                                        std::cout
-                                            << metricsMessage;
-
-
-                                        std::cout
-                                            << "=======================================\n";
+                                        Logger::instance().info(
+                                            "Metrics parsed: client=" +
+                                            clientName +
+                                            ", host=" +
+                                            hostname +
+                                            ", cpu=" +
+                                            std::to_string(
+                                                cpuUsagePercent
+                                            ) +
+                                            "%, memory=" +
+                                            std::to_string(
+                                                memoryUsagePercent
+                                            ) +
+                                            "%, load1=" +
+                                            std::to_string(
+                                                load1
+                                            ) +
+                                            ", processes=" +
+                                            std::to_string(
+                                                processCount
+                                            )
+                                        );
                                     }
                                 );
                             }
@@ -535,25 +491,22 @@ void TcpServer::run() {
 
                     // =========================================
                     // Backpressure
-                    //
-                    // Worker queue is full:
-                    //
-                    // do NOT block Reactor thread.
-                    //
-                    // Drop this metrics sample instead.
                     // =========================================
 
                     if (!submitted) {
 
-                        std::cerr
-                            << "[Backpressure] Worker queue full. "
-                            << "Dropping metrics from "
-                            << clientName
-                            << ". Pending tasks="
-                            << threadPool.queueSize()
-                            << "/"
-                            << threadPool.maxQueueSize()
-                            << '\n';
+                        Logger::instance().warning(
+                            "Worker queue full, dropping metrics from " +
+                            clientName +
+                            ", pending=" +
+                            std::to_string(
+                                threadPool.queueSize()
+                            ) +
+                            "/" +
+                            std::to_string(
+                                threadPool.maxQueueSize()
+                            )
+                        );
                     }
                 }
             );
@@ -561,12 +514,6 @@ void TcpServer::run() {
 
             // =================================================
             // Connection close callback
-            //
-            // TcpConnection cannot destroy itself directly
-            // while Channel callback is still running.
-            //
-            // Therefore destruction is deferred through
-            // EventLoop::queueInLoop().
             // =================================================
 
             connection->setCloseCallback(
@@ -596,25 +543,17 @@ void TcpServer::run() {
                             }
 
 
-                            std::cout
-                                << "Client disconnected: "
-                                << connectionIt
+                            Logger::instance().info(
+                                "Client disconnected: " +
+                                connectionIt
                                     ->second
-                                    ->clientName()
-                                << "  fd="
-                                << fd
-                                << '\n';
+                                    ->clientName() +
+                                ", fd=" +
+                                std::to_string(
+                                    fd
+                                )
+                            );
 
-
-                            // ---------------------------------
-                            // Destroying unique_ptr causes:
-                            //
-                            // ~TcpConnection()
-                            //      ↓
-                            // removeChannel()
-                            //      ↓
-                            // close(clientFd)
-                            // ---------------------------------
 
                             connections.erase(
                                 connectionIt
@@ -626,7 +565,7 @@ void TcpServer::run() {
 
 
             // =================================================
-            // Store TcpConnection ownership
+            // Store connection ownership
             // =================================================
 
             const auto result =
@@ -640,22 +579,26 @@ void TcpServer::run() {
 
             if (!result.second) {
 
-                std::cerr
-                    << "Failed to store TcpConnection: fd="
-                    << clientFd
-                    << '\n';
+                Logger::instance().error(
+                    "Failed to store TcpConnection: fd=" +
+                    std::to_string(
+                        clientFd
+                    )
+                );
 
 
                 return;
             }
 
 
-            std::cout
-                << "Client connected: "
-                << clientName
-                << "  fd="
-                << clientFd
-                << '\n';
+            Logger::instance().info(
+                "Client connected: " +
+                clientName +
+                ", fd=" +
+                std::to_string(
+                    clientFd
+                )
+            );
         }
     );
 
@@ -665,20 +608,18 @@ void TcpServer::run() {
     // ========================================================
 
     Logger::instance().info(
-    "LMonitor Reactor Server listening on port " +
-    std::to_string(
-        port_
-    )
-);
+        "LMonitor Reactor Server listening on port " +
+        std::to_string(
+            port_
+        )
+    );
 
 
     eventLoop.loop();
 
 
     // ========================================================
-    // Reactor stopped.
-    //
-    // Remove signalfd Channel before closing signalFd.
+    // Reactor stopped
     // ========================================================
 
     eventLoop.removeChannel(
@@ -691,6 +632,7 @@ void TcpServer::run() {
     );
 
 
-    std::cout
-        << "LMonitor Reactor Server stopped gracefully.\n";
+    Logger::instance().info(
+        "LMonitor Reactor Server stopped gracefully"
+    );
 }
