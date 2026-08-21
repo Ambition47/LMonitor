@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>LMonitor Dashboard</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family:
+                Arial,
+                "Microsoft YaHei",
+                sans-serif;
+            background: #f4f6f8;
+            color: #222;
+        }
+
+        header {
+            background: #202938;
+            color: white;
+            padding: 20px 32px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 26px;
+        }
+
+        header p {
+            margin: 6px 0 0;
+            opacity: 0.8;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns:
+                repeat(
+                    4,
+                    minmax(150px, 1fr)
+                );
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 18px;
+            box-shadow:
+                0 2px 8px
+                rgba(0, 0, 0, 0.06);
+        }
+
+        .card-title {
+            color: #667085;
+            font-size: 14px;
+        }
+
+        .card-value {
+            margin-top: 8px;
+            font-size: 30px;
+            font-weight: bold;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow:
+                0 2px 8px
+                rgba(0, 0, 0, 0.06);
+            margin-bottom: 24px;
+        }
+
+        .panel h2 {
+            margin-top: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom:
+                1px solid #eaecf0;
+        }
+
+        th {
+            color: #667085;
+            font-size: 14px;
+        }
+
+        tbody tr {
+            cursor: pointer;
+        }
+
+        tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 9px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .ONLINE {
+            background: #dcfae6;
+            color: #067647;
+        }
+
+        .STALE {
+            background: #fef0c7;
+            color: #b54708;
+        }
+
+        .OFFLINE {
+            background: #fee4e2;
+            color: #b42318;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(
+                    3,
+                    minmax(180px, 1fr)
+                );
+            gap: 12px;
+        }
+
+        .detail-item {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .detail-label {
+            color: #667085;
+            font-size: 13px;
+        }
+
+        .detail-value {
+            margin-top: 6px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .muted {
+            color: #667085;
+        }
+
+        #errorMessage {
+            display: none;
+            background: #fee4e2;
+            color: #b42318;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        @media (
+            max-width: 800px
+        ) {
+            .summary {
+                grid-template-columns:
+                    repeat(
+                        2,
+                        1fr
+                    );
+            }
+
+            .detail-grid {
+                grid-template-columns:
+                    1fr;
+            }
+
+            table {
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>LMonitor Dashboard</h1>
+
+    <p>
+        Linux 分布式服务器实时监控平台
+    </p>
+</header>
+
+
+<main>
+
+    <div id="errorMessage"></div>
+
+
+    <section class="summary">
+
+        <div class="card">
+            <div class="card-title">
+                监控主机
+            </div>
+
+            <div
+                class="card-value"
+                id="hostCount"
+            >
+                0
+            </div>
+        </div>
+
+
+        <div class="card">
+            <div class="card-title">
+                ONLINE
+            </div>
+
+            <div
+                class="card-value"
+                id="onlineCount"
+            >
+                0
+            </div>
+        </div>
+
+
+        <div class="card">
+            <div class="card-title">
+                STALE
+            </div>
+
+            <div
+                class="card-value"
+                id="staleCount"
+            >
+                0
+            </div>
+        </div>
+
+
+        <div class="card">
+            <div class="card-title">
+                OFFLINE
+            </div>
+
+            <div
+                class="card-value"
+                id="offlineCount"
+            >
+                0
+            </div>
+        </div>
+
+    </section>
+
+
+    <section class="panel">
+
+        <h2>主机列表</h2>
+
+
+        <table>
+
+            <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>Status</th>
+                <th>CPU</th>
+                <th>Memory</th>
+                <th>Load 1m</th>
+                <th>Uptime</th>
+            </tr>
+            </thead>
+
+
+            <tbody id="hostsTable">
+
+            <tr>
+                <td colspan="6">
+                    正在读取监控数据...
+                </td>
+            </tr>
+
+            </tbody>
+
+        </table>
+
+    </section>
+
+
+    <section class="panel">
+
+        <h2>主机详情</h2>
+
+        <div
+            id="hostDetail"
+            class="muted"
+        >
+            点击上方某台主机查看详细信息。
+        </div>
+
+    </section>
+
+</main>
+
+
+<script>
+    const hostsTable =
+        document.getElementById(
+            "hostsTable"
+        );
+
+
+    const hostDetail =
+        document.getElementById(
+            "hostDetail"
+        );
+
+
+    const errorMessage =
+        document.getElementById(
+            "errorMessage"
+        );
+
+
+    let selectedHostname =
+        null;
+
+
+    function showError(message) {
+
+        errorMessage.textContent =
+            message;
+
+
+        errorMessage.style.display =
+            "block";
+    }
+
+
+    function clearError() {
+
+        errorMessage.style.display =
+            "none";
+    }
+
+
+    function formatPercent(value) {
+
+        return Number(value)
+            .toFixed(2) + "%";
+    }
+
+
+    function formatUptime(seconds) {
+
+        seconds =
+            Number(seconds);
+
+
+        const days =
+            Math.floor(
+                seconds / 86400
+            );
+
+
+        const hours =
+            Math.floor(
+                (
+                    seconds %
+                    86400
+                ) /
+                3600
+            );
+
+
+        const minutes =
+            Math.floor(
+                (
+                    seconds %
+                    3600
+                ) /
+                60
+            );
+
+
+        return (
+            days +
+            "d " +
+            hours +
+            "h " +
+            minutes +
+            "m"
+        );
+    }
+
+
+    function bytesPerSecond(value) {
+
+        value =
+            Number(value);
+
+
+        if (
+            value >=
+            1024 * 1024
+        ) {
+
+            return (
+                value /
+                1024 /
+                1024
+            ).toFixed(2) +
+            " MiB/s";
+        }
+
+
+        return (
+            value /
+            1024
+        ).toFixed(2) +
+        " KiB/s";
+    }
+
+
+    async function loadHosts() {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/hosts",
+                    {
+                        cache: "no-store"
+                    }
+                );
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "HTTP " +
+                    response.status
+                );
+            }
+
+
+            const hosts =
+                await response.json();
+
+
+            clearError();
+
+
+            renderSummary(
+                hosts
+            );
+
+
+            renderHosts(
+                hosts
+            );
+
+
+            if (selectedHostname) {
+
+                await loadHostDetail(
+                    selectedHostname
+                );
+            }
+
+        } catch (error) {
+
+            showError(
+                "读取监控数据失败：" +
+                error.message
+            );
+        }
+    }
+
+
+    function renderSummary(hosts) {
+
+        document.getElementById(
+            "hostCount"
+        ).textContent =
+            hosts.length;
+
+
+        document.getElementById(
+            "onlineCount"
+        ).textContent =
+            hosts.filter(
+                host =>
+                    host.status ===
+                    "ONLINE"
+            ).length;
+
+
+        document.getElementById(
+            "staleCount"
+        ).textContent =
+            hosts.filter(
+                host =>
+                    host.status ===
+                    "STALE"
+            ).length;
+
+
+        document.getElementById(
+            "offlineCount"
+        ).textContent =
+            hosts.filter(
+                host =>
+                    host.status ===
+                    "OFFLINE"
+            ).length;
+    }
+
+
+    function renderHosts(hosts) {
+
+        hostsTable.innerHTML =
+            "";
+
+
+        if (hosts.length === 0) {
+
+            hostsTable.innerHTML =
+                `
+                <tr>
+                    <td colspan="6">
+                        暂无 Agent 数据
+                    </td>
+                </tr>
+                `;
+
+
+            return;
+        }
+
+
+        for (const host of hosts) {
+
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+
+            row.innerHTML =
+                `
+                <td>${escapeHtml(host.hostname)}</td>
+
+                <td>
+                    <span class="status ${host.status}">
+                        ${host.status}
+                    </span>
+                </td>
+
+                <td>
+                    ${formatPercent(host.cpu)}
+                </td>
+
+                <td>
+                    ${formatPercent(host.memory)}
+                </td>
+
+                <td>
+                    ${Number(host.load1).toFixed(2)}
+                </td>
+
+                <td>
+                    ${formatUptime(host.uptime)}
+                </td>
+                `;
+
+
+            row.addEventListener(
+                "click",
+                () => {
+
+                    selectedHostname =
+                        host.hostname;
+
+
+                    loadHostDetail(
+                        host.hostname
+                    );
+                }
+            );
+
+
+            hostsTable.appendChild(
+                row
+            );
+        }
+    }
+
+
+    async function loadHostDetail(
+        hostname
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/hosts/" +
+                    encodeURIComponent(
+                        hostname
+                    ),
+                    {
+                        cache: "no-store"
+                    }
+                );
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "HTTP " +
+                    response.status
+                );
+            }
+
+
+            const host =
+                await response.json();
+
+
+            renderHostDetail(
+                host
+            );
+
+        } catch (error) {
+
+            hostDetail.innerHTML =
+                "读取主机详情失败";
+        }
+    }
+
+
+    function renderHostDetail(host) {
+
+        hostDetail.classList.remove(
+            "muted"
+        );
+
+
+        hostDetail.innerHTML =
+            `
+            <div class="detail-grid">
+
+                ${detail(
+                    "Hostname",
+                    escapeHtml(
+                        host.hostname
+                    )
+                )}
+
+                ${detail(
+                    "Status",
+                    host.status
+                )}
+
+                ${detail(
+                    "CPU",
+                    formatPercent(
+                        host.cpu
+                    )
+                )}
+
+                ${detail(
+                    "Memory",
+                    formatPercent(
+                        host.memory
+                            .usage_percent
+                    )
+                )}
+
+                ${detail(
+                    "Load 1m",
+                    Number(
+                        host.load.load1
+                    ).toFixed(2)
+                )}
+
+                ${detail(
+                    "Logical CPUs",
+                    host.logical_cpus
+                )}
+
+                ${detail(
+                    "Disk",
+                    formatPercent(
+                        host.disk
+                            .usage_percent
+                    )
+                )}
+
+                ${detail(
+                    "RX",
+                    bytesPerSecond(
+                        host.network
+                            .rx_bytes_per_second
+                    )
+                )}
+
+                ${detail(
+                    "TX",
+                    bytesPerSecond(
+                        host.network
+                            .tx_bytes_per_second
+                    )
+                )}
+
+                ${detail(
+                    "Uptime",
+                    formatUptime(
+                        host.uptime_seconds
+                    )
+                )}
+
+                ${detail(
+                    "Interface",
+                    escapeHtml(
+                        host.network
+                            .interface
+                    )
+                )}
+
+                ${detail(
+                    "Top Processes",
+                    host.processes.length
+                )}
+
+            </div>
+            `;
+    }
+
+
+    function detail(
+        label,
+        value
+    ) {
+
+        return `
+            <div class="detail-item">
+
+                <div class="detail-label">
+                    ${label}
+                </div>
+
+                <div class="detail-value">
+                    ${value}
+                </div>
+
+            </div>
+        `;
+    }
+
+
+    function escapeHtml(value) {
+
+        const element =
+            document.createElement(
+                "div"
+            );
+
+
+        element.textContent =
+            value ?? "";
+
+
+        return element.innerHTML;
+    }
+
+
+    // --------------------------------------------------------
+    // Initial load
+    // --------------------------------------------------------
+
+    loadHosts();
+
+
+    // --------------------------------------------------------
+    // Refresh every two seconds
+    // --------------------------------------------------------
+
+    setInterval(
+        loadHosts,
+        2000
+    );
+</script>
+
+
+</body>
+</html>
