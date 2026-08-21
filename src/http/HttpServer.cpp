@@ -1,5 +1,6 @@
 #include "http/HttpServer.h"
 
+#include "alert/AlertEvaluator.h"
 #include "http/HttpResponse.h"
 #include "log/Logger.h"
 
@@ -7,11 +8,9 @@
 
 #include <cerrno>
 #include <cstring>
-#include <exception>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <string>
 
 #include <netinet/in.h>
 
@@ -23,14 +22,11 @@
 
 namespace {
 
-constexpr int BACKLOG =
-    64;
+constexpr int BACKLOG = 64;
 
+constexpr std::size_t BUFFER_SIZE = 8192;
 
-constexpr std::size_t BUFFER_SIZE =
-    8192;
-
-}  // namespace
+}
 
 
 // ============================================================
@@ -39,14 +35,17 @@ constexpr std::size_t BUFFER_SIZE =
 
 HttpServer::HttpServer(
     uint16_t port,
-    MetricsStore& store
+    MetricsStore& store,
+    MetricsHistoryStore& historyStore,
+    AlertManager& alertManager
 )
-    : port_(
-          port
-      ),
-      store_(
-          store
-      ) {
+    :
+    port_(port),
+    store_(store),
+    historyStore_(historyStore),
+    alertManager_(alertManager)
+{
+
 }
 
 
@@ -54,25 +53,29 @@ HttpServer::HttpServer(
 // Destructor
 // ============================================================
 
-HttpServer::~HttpServer() {
+HttpServer::~HttpServer()
+{
     stop();
 }
 
 
+
 // ============================================================
-// Start HTTP server thread
+// Start
 // ============================================================
 
-void HttpServer::start() {
-    bool expected =
-        false;
+void HttpServer::start()
+{
+    bool expected = false;
 
 
-    if (!running_.compare_exchange_strong(
+    if (
+        !running_.compare_exchange_strong(
             expected,
             true
-        )) {
-
+        )
+    )
+    {
         return;
     }
 
@@ -85,18 +88,18 @@ void HttpServer::start() {
 }
 
 
+
 // ============================================================
-// Stop HTTP server
+// Stop
 // ============================================================
 
-void HttpServer::stop() {
-    running_.store(
-        false
-    );
+void HttpServer::stop()
+{
+    running_.store(false);
 
 
-    if (listenFd_ >= 0) {
-
+    if(listenFd_ >= 0)
+    {
         shutdown(
             listenFd_,
             SHUT_RDWR
@@ -108,78 +111,56 @@ void HttpServer::stop() {
         );
 
 
-        listenFd_ =
-            -1;
+        listenFd_ = -1;
     }
 
 
-    if (thread_.joinable()) {
-
+    if(thread_.joinable())
+    {
         thread_.join();
     }
 }
 
 
+
 // ============================================================
-// HTTP server main thread
+// HTTP server main loop
 // ============================================================
 
-void HttpServer::run() {
-    try {
-
-        // ----------------------------------------------------
-        // Create socket
-        // ----------------------------------------------------
+void HttpServer::run()
+{
+    try
+    {
 
         listenFd_ =
             socket(
                 AF_INET,
-                SOCK_STREAM |
-                SOCK_CLOEXEC,
+                SOCK_STREAM | SOCK_CLOEXEC,
                 0
             );
 
 
-        if (listenFd_ < 0) {
-
+        if(listenFd_ < 0)
+        {
             throw std::runtime_error(
-                "HTTP socket creation failed: " +
-                std::string(
-                    std::strerror(
-                        errno
-                    )
-                )
+                "HTTP socket failed"
             );
         }
 
 
-        // ----------------------------------------------------
-        // SO_REUSEADDR
-        // ----------------------------------------------------
-
-        int reuse =
-            1;
+        int reuse = 1;
 
 
-        if (setsockopt(
-                listenFd_,
-                SOL_SOCKET,
-                SO_REUSEADDR,
-                &reuse,
-                sizeof(reuse)
-            ) < 0) {
-
-            throw std::runtime_error(
-                "HTTP setsockopt(SO_REUSEADDR) failed"
-            );
-        }
+        setsockopt(
+            listenFd_,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &reuse,
+            sizeof(reuse)
+        );
 
 
-        // ----------------------------------------------------
-        // Bind
-        // ----------------------------------------------------
-
-        sockaddr_in address {};
+        sockaddr_in address{};
 
 
         address.sin_family =
@@ -198,60 +179,53 @@ void HttpServer::run() {
             );
 
 
-        if (bind(
+        if(
+            bind(
                 listenFd_,
                 reinterpret_cast<sockaddr*>(
                     &address
                 ),
                 sizeof(address)
-            ) < 0) {
-
+            ) < 0
+        )
+        {
             throw std::runtime_error(
-                "HTTP bind failed: " +
-                std::string(
-                    std::strerror(
-                        errno
-                    )
-                )
+                "HTTP bind failed"
             );
         }
 
 
-        // ----------------------------------------------------
-        // Listen
-        // ----------------------------------------------------
 
-        if (listen(
+        if(
+            listen(
                 listenFd_,
                 BACKLOG
-            ) < 0) {
-
+            ) < 0
+        )
+        {
             throw std::runtime_error(
-                "HTTP listen failed: " +
-                std::string(
-                    std::strerror(
-                        errno
-                    )
-                )
+                "HTTP listen failed"
             );
         }
+
 
 
         Logger::instance().info(
-            "HTTP Server listening on port " +
+            "HTTP listening on port "
+            +
             std::to_string(
                 port_
             )
         );
 
 
-        // ====================================================
-        // Accept loop
-        // ====================================================
 
-        while (running_.load()) {
+        while(
+            running_
+        )
+        {
 
-            sockaddr_in clientAddress {};
+            sockaddr_in clientAddress{};
 
 
             socklen_t clientLength =
@@ -260,7 +234,7 @@ void HttpServer::run() {
                 );
 
 
-            const int clientFd =
+            int clientFd =
                 accept4(
                     listenFd_,
                     reinterpret_cast<sockaddr*>(
@@ -271,31 +245,15 @@ void HttpServer::run() {
                 );
 
 
-            if (clientFd < 0) {
-
-                if (!running_.load()) {
-
-                    break;
-                }
-
-
-                if (errno == EINTR) {
-
+            if(clientFd < 0)
+            {
+                if(errno == EINTR)
+                {
                     continue;
                 }
 
 
-                Logger::instance().warning(
-                    "HTTP accept failed: " +
-                    std::string(
-                        std::strerror(
-                            errno
-                        )
-                    )
-                );
-
-
-                continue;
+                break;
             }
 
 
@@ -309,95 +267,77 @@ void HttpServer::run() {
             );
         }
 
-    } catch (
-        const std::exception& e
-    ) {
-
-        if (running_.load()) {
-
-            Logger::instance().error(
-                "HTTP Server error: " +
-                std::string(
-                    e.what()
-                )
-            );
-        }
     }
+    catch(
+        const std::exception& e
+    )
+    {
 
-
-    running_.store(
-        false
-    );
-
-
-    if (listenFd_ >= 0) {
-
-        close(
-            listenFd_
+        Logger::instance().error(
+            e.what()
         );
 
-
-        listenFd_ =
-            -1;
     }
 
 
-    Logger::instance().info(
-        "HTTP Server stopped"
-    );
+    running_.store(false);
 }
 
 
+
 // ============================================================
-// Handle one HTTP client
+// Handle request
 // ============================================================
 
 void HttpServer::handleClient(
     int clientFd
-) {
+)
+{
+
     char buffer[
         BUFFER_SIZE
-    ] {};
+    ]{};
 
 
-    const ssize_t bytesRead =
+
+    ssize_t length =
         recv(
             clientFd,
             buffer,
-            sizeof(buffer) - 1,
+            sizeof(buffer)-1,
             0
         );
 
 
-    if (bytesRead <= 0) {
 
+    if(length <= 0)
+    {
         return;
     }
 
 
-    const std::string request(
+
+    std::string request(
         buffer,
-        static_cast<std::size_t>(
-            bytesRead
+        static_cast<size_t>(
+            length
         )
     );
 
 
-    // --------------------------------------------------------
-    // Parse request line:
-    //
-    // GET /api/hosts HTTP/1.1
-    // --------------------------------------------------------
 
-    const std::size_t lineEnd =
+    auto lineEnd =
         request.find(
             "\r\n"
         );
 
 
-    if (lineEnd ==
-        std::string::npos) {
 
+    if(
+        lineEnd ==
+        std::string::npos
+    )
+    {
         sendAll(
             clientFd,
             HttpResponse::badRequest()
@@ -407,15 +347,12 @@ void HttpServer::handleClient(
     }
 
 
-    const std::string requestLine =
+
+    std::istringstream stream(
         request.substr(
             0,
             lineEnd
-        );
-
-
-    std::istringstream lineStream(
-        requestLine
+        )
     );
 
 
@@ -426,16 +363,20 @@ void HttpServer::handleClient(
     std::string version;
 
 
-    lineStream
-        >> method
-        >> path
-        >> version;
+    stream
+        >>
+        method
+        >>
+        path
+        >>
+        version;
 
 
-    if (method.empty() ||
-        path.empty() ||
-        version.empty()) {
 
+    if(
+        method != "GET"
+    )
+    {
         sendAll(
             clientFd,
             HttpResponse::badRequest()
@@ -444,253 +385,317 @@ void HttpServer::handleClient(
         return;
     }
 
-
-    if (method !=
-        "GET") {
-
-        sendAll(
-            clientFd,
-            HttpResponse::badRequest()
-        );
-
-        return;
-    }
 
 
     std::string response;
+
 
 
     // ========================================================
     // Dashboard
     // ========================================================
 
-    if (path == "/" ||
-        path == "/index.html") {
+    if(
+        path == "/"
+        ||
+        path == "/index.html"
+    )
+    {
 
-        const std::string html =
-            loadDashboardHtml();
+        response =
+            HttpResponse::okHtml(
+                loadDashboardHtml()
+            );
 
-
-        if (html.empty()) {
-
-            response =
-                HttpResponse::internalServerError();
-
-        } else {
-
-            response =
-                HttpResponse::okHtml(
-                    html
-                );
-        }
     }
 
 
+
     // ========================================================
-    // Host list
+    // Alerts
     // ========================================================
 
-    else if (path ==
-             "/api/hosts") {
+    else if(
+        path ==
+        "/api/alerts"
+    )
+    {
+
+        response =
+            HttpResponse::okJson(
+                buildAlertsJson()
+            );
+
+    }
+
+
+
+    // ========================================================
+    // Hosts
+    // ========================================================
+
+    else if(
+        path ==
+        "/api/hosts"
+    )
+    {
 
         response =
             HttpResponse::okJson(
                 buildHostsJson()
             );
+
     }
 
-
     // ========================================================
-    // Host details
-    //
-    // /api/hosts/server-ubuntu2404
-    // ========================================================
+// Host history
+//
+// /api/hosts/{hostname}/history
+// ========================================================
 
-    else if (path.rfind(
-                 "/api/hosts/",
-                 0
-             ) == 0) {
+else if(
+    path.rfind(
+        "/api/hosts/",
+        0
+    ) == 0
+    &&
+    path.find(
+        "/history"
+    )
+    != std::string::npos
+)
+{
 
-        const std::string hostname =
-            path.substr(
-                std::string(
-                    "/api/hosts/"
-                ).size()
-            );
-
-
-        if (hostname.empty()) {
-
-            response =
-                HttpResponse::badRequest();
-
-        } else {
-
-            MetricsStore::StoredMetrics
-                storedMetrics;
+    const std::string prefix =
+        "/api/hosts/";
 
 
-            if (!store_.getLatest(
-                    hostname,
-                    storedMetrics
-                )) {
-
-                response =
-                    HttpResponse::notFound();
-
-            } else {
-
-                response =
-                    HttpResponse::okJson(
-                        buildHostDetailJson(
-                            hostname
-                        )
-                    );
-            }
-        }
-    }
+    const std::string suffix =
+        "/history";
 
 
-    // ========================================================
-    // 404
-    // ========================================================
-
-    else {
-
-        response =
-            HttpResponse::notFound();
-    }
+    const std::size_t start =
+        prefix.size();
 
 
-    sendAll(
-        clientFd,
-        response
-    );
+    const std::size_t end =
+        path.find(
+            suffix
+        );
+
+
+    std::string hostname =
+        path.substr(
+            start,
+            end-start
+        );
+
+
+
+    response =
+        HttpResponse::okJson(
+            buildHostHistoryJson(
+                hostname
+            )
+        );
+
 }
 
 
+
+
+// ========================================================
+// Host detail
+//
+// /api/hosts/{hostname}
+// ========================================================
+
+else if(
+    path.rfind(
+        "/api/hosts/",
+        0
+    ) == 0
+)
+{
+
+    std::string hostname =
+        path.substr(
+            std::string(
+                "/api/hosts/"
+            ).size()
+        );
+
+
+    response =
+        HttpResponse::okJson(
+            buildHostDetailJson(
+                hostname
+            )
+        );
+
+}
+
+
+
+
+else
+{
+
+    response =
+        HttpResponse::notFound();
+
+}
+
+
+
+
+sendAll(
+    clientFd,
+    response
+);
+
+
+}
+
+
+
 // ============================================================
-// Build host-list JSON
+// Hosts JSON
 // ============================================================
 
-std::string HttpServer::buildHostsJson() {
-    const auto hosts =
+std::string HttpServer::buildHostsJson()
+{
+
+    auto hosts =
         store_.getAll();
+
 
 
     std::ostringstream json;
 
 
     json
-        << '[';
+        << "[";
+
 
 
     bool first =
         true;
 
 
-    for (const auto& host :
-         hosts) {
 
-        if (!first) {
+    for(
+        const auto& host :
+        hosts
+    )
+    {
 
-            json
-                << ',';
+        if(!first)
+        {
+            json << ",";
         }
 
 
-        first =
-            false;
+        first = false;
 
-
-        const auto status =
-            store_.getStatus(
-                host
-            );
 
 
         json
-            << '{'
+            << "{";
 
+
+
+        json
             << "\"hostname\":\""
             << jsonEscape(
                 host.metrics.hostname
             )
-            << "\","
+            << "\",";
 
-            << "\"status\":\""
-            << MetricsStore::statusToString(
-                status
-            )
-            << "\","
 
+
+        json
             << "\"cpu\":"
             << host.metrics.cpuUsagePercent
-            << ','
+            << ",";
 
+
+
+        json
             << "\"memory\":"
             << host.metrics.memoryUsagePercent
-            << ','
+            << ",";
 
+
+
+        json
             << "\"load1\":"
             << host.metrics.load1
-            << ','
+            << ",";
 
+
+
+        json
             << "\"uptime\":"
-            << host.metrics.uptimeSeconds
+            << host.metrics.uptimeSeconds;
 
-            << '}';
+
+
+        json
+            << "}";
+
     }
 
 
+
     json
-        << ']';
+        << "]";
 
 
     return json.str();
+
 }
 
 
+
 // ============================================================
-// Build single-host detail JSON
+// Host detail JSON
 // ============================================================
 
 std::string HttpServer::buildHostDetailJson(
     const std::string& hostname
-) {
-    MetricsStore::StoredMetrics
-        host;
+)
+{
+
+    MetricsStore::StoredMetrics stored;
 
 
-    if (!store_.getLatest(
+
+    if(
+        !store_.getLatest(
             hostname,
-            host
-        )) {
-
+            stored
+        )
+    )
+    {
         return "{}";
     }
 
 
-    const auto status =
-        store_.getStatus(
-            host
-        );
 
+    const auto& metrics =
+        stored.metrics;
 
-    const SystemMetrics& metrics =
-        host.metrics;
 
 
     std::ostringstream json;
 
 
+
     json
-        << '{';
+        << "{";
 
 
-    // --------------------------------------------------------
-    // Basic information
-    // --------------------------------------------------------
 
     json
         << "\"hostname\":\""
@@ -700,267 +705,416 @@ std::string HttpServer::buildHostDetailJson(
         << "\",";
 
 
+
     json
-        << "\"status\":\""
-        << MetricsStore::statusToString(
-            status
-        )
-        << "\",";
+        << "\"cpu\":"
+        << metrics.cpuUsagePercent
+        << ",";
+
+
+
+    json
+        << "\"memory\":"
+        << metrics.memoryUsagePercent
+        << ",";
+
 
 
     json
         << "\"uptime_seconds\":"
         << metrics.uptimeSeconds
-        << ',';
+        << ",";
+
 
 
     json
         << "\"logical_cpus\":"
         << metrics.logicalCpuCount
-        << ',';
+        << ",";
 
 
-    // --------------------------------------------------------
-    // CPU
-    // --------------------------------------------------------
 
     json
-        << "\"cpu\":"
-        << metrics.cpuUsagePercent
-        << ',';
+        << "\"load\":{";
 
-
-    // --------------------------------------------------------
-    // Memory
-    // --------------------------------------------------------
 
     json
-        << "\"memory\":{"
-
-        << "\"total_kb\":"
-        << metrics.memoryTotalKB
-        << ','
-
-        << "\"used_kb\":"
-        << metrics.memoryUsedKB
-        << ','
-
-        << "\"available_kb\":"
-        << metrics.memoryAvailableKB
-        << ','
-
-        << "\"usage_percent\":"
-        << metrics.memoryUsagePercent
-
-        << "},";
-
-
-    // --------------------------------------------------------
-    // Load
-    // --------------------------------------------------------
-
-    json
-        << "\"load\":{"
-
         << "\"load1\":"
         << metrics.load1
-        << ','
+        << ",";
 
+
+    json
         << "\"load5\":"
         << metrics.load5
-        << ','
+        << ",";
 
+
+    json
         << "\"load15\":"
-        << metrics.load15
+        << metrics.load15;
 
+
+
+    json
         << "},";
 
 
-    // --------------------------------------------------------
-    // Disk
-    // --------------------------------------------------------
 
     json
-        << "\"disk\":{"
+        << "\"disk\":{";
 
-        << "\"mount\":\""
-        << jsonEscape(
-            metrics.diskMountPoint
-        )
-        << "\","
 
-        << "\"total_bytes\":"
-        << metrics.diskTotalBytes
-        << ','
-
-        << "\"used_bytes\":"
-        << metrics.diskUsedBytes
-        << ','
-
-        << "\"available_bytes\":"
-        << metrics.diskAvailableBytes
-        << ','
-
+    json
         << "\"usage_percent\":"
-        << metrics.diskUsagePercent
+        << metrics.diskUsagePercent;
 
+
+    json
         << "},";
 
 
-    // --------------------------------------------------------
-    // Network
-    // --------------------------------------------------------
 
     json
-        << "\"network\":{"
+        << "\"network\":{";
 
+
+    json
         << "\"interface\":\""
         << jsonEscape(
             metrics.networkInterface
         )
-        << "\","
-
-        << "\"rx_bytes_per_second\":"
-        << metrics.networkRxBytesPerSecond
-        << ','
-
-        << "\"tx_bytes_per_second\":"
-        << metrics.networkTxBytesPerSecond
-
-        << "},";
-
-
-    // --------------------------------------------------------
-    // Processes
-    // --------------------------------------------------------
-
-    json
-        << "\"processes\":[";
-
-
-    bool firstProcess =
-        true;
-
-
-    for (const auto& process :
-         metrics.topProcesses) {
-
-        if (!firstProcess) {
-
-            json
-                << ',';
-        }
-
-
-        firstProcess =
-            false;
-
-
-        json
-            << '{'
-
-            << "\"pid\":"
-            << process.pid
-            << ','
-
-            << "\"name\":\""
-            << jsonEscape(
-                process.name
-            )
-            << "\","
-
-            << "\"cpu\":"
-            << process.cpuUsagePercent
-            << ','
-
-            << "\"memory\":"
-            << process.memoryUsagePercent
-            << ','
-
-            << "\"rss_kb\":"
-            << process.residentMemoryKB
-
-            << '}';
-    }
+        << "\"";
 
 
     json
-        << ']';
+        << "}";
+
 
 
     json
-        << '}';
+        << "}";
+
 
 
     return json.str();
+
 }
+
+
+
+// ============================================================
+// History JSON
+// ============================================================
+
+std::string HttpServer::buildHostHistoryJson(
+    const std::string& hostname
+)
+{
+
+    auto history =
+        historyStore_.get(
+            hostname
+        );
+
+
+
+    std::ostringstream json;
+
+
+    json
+        << "[";
+
+
+
+    bool first =
+        true;
+
+
+
+    for(
+        const auto& point :
+        history
+    )
+    {
+
+        if(!first)
+        {
+            json
+                << ",";
+        }
+
+
+        first =
+            false;
+
+
+
+        json
+            << "{";
+
+
+        json
+            << "\"timestamp\":"
+            << point.timestampMs
+            << ",";
+
+
+        json
+            << "\"cpu\":"
+            << point.cpuUsagePercent
+            << ",";
+
+
+        json
+            << "\"memory\":"
+            << point.memoryUsagePercent;
+
+
+
+        json
+            << "}";
+
+    }
+
+
+
+    json
+        << "]";
+
+
+    return json.str();
+
+}
+
+// ============================================================
+// Alerts JSON
+//
+// GET /api/alerts
+// ============================================================
+
+std::string HttpServer::buildAlertsJson()
+{
+
+    const auto alerts =
+        alertManager_.getActiveAlerts();
+
+
+    std::ostringstream json;
+
+
+
+    json
+        << "[";
+
+
+
+    bool first =
+        true;
+
+
+
+    for(
+        const auto& alert :
+        alerts
+    )
+    {
+
+
+            if(!first)
+            {
+                json
+                    << ",";
+            }
+
+
+            first =
+                false;
+
+
+
+            json
+                << "{";
+
+
+
+            json
+                << "\"hostname\":\""
+                << jsonEscape(
+                    alert.hostname
+                )
+                << "\",";
+
+
+
+            json
+                << "\"metric\":\""
+                << jsonEscape(
+                    alert.metric
+                )
+                << "\",";
+
+
+
+            json
+                << "\"state\":\"";
+
+
+	    switch(
+            alert.state
+        )
+        {
+
+            case AlertState::Pending:
+
+                json
+                    << "PENDING";
+
+                break;
+
+
+
+            case AlertState::Firing:
+
+                json
+                    << "FIRING";
+
+                break;
+
+
+
+            default:
+
+                json
+                    << "NORMAL";
+
+                break;
+
+        }
+
+
+
+        json
+            << "\",";
+
+
+
+        json
+            << "\"current_value\":"
+            << alert.currentValue
+            << ",";
+
+
+
+        json
+            << "\"threshold\":"
+            << alert.threshold
+            << ",";
+
+
+
+        json
+            << "\"message\":\""
+            << jsonEscape(
+                alert.message
+            )
+            << "\"";
+
+
+
+        json
+            << "}";
+
+    }
+
+
+
+    json
+        << "]";
+
+
+
+    return json.str();
+
+
+    }
+
+
+
 
 
 // ============================================================
 // Load dashboard HTML
 // ============================================================
 
-std::string HttpServer::loadDashboardHtml() const {
-    // --------------------------------------------------------
-    // Development layout:
-    //
-    // ~/LMonitor/build/lmonitor_server
-    // ~/LMonitor/web/index.html
-    //
-    // Server is normally launched from build/, so first try:
-    //
-    // ../web/index.html
-    // --------------------------------------------------------
+std::string HttpServer::loadDashboardHtml() const
+{
 
-    const std::string paths[] = {
+    const std::string paths[] =
+    {
         "../web/index.html",
+
         "web/index.html",
+
         "./web/index.html"
     };
 
 
-    for (const auto& path :
-         paths) {
 
-        std::ifstream input(
+    for(
+        const auto& path :
+        paths
+    )
+    {
+
+        std::ifstream file(
             path
         );
 
 
-        if (!input.is_open()) {
 
+        if(
+            !file.is_open()
+        )
+        {
             continue;
         }
+
 
 
         std::ostringstream buffer;
 
 
         buffer
-            << input.rdbuf();
+            << file.rdbuf();
+
 
 
         return buffer.str();
+
     }
 
 
-    Logger::instance().error(
-        "Dashboard HTML not found"
-    );
-
 
     return "";
+
 }
 
 
+
+
+
 // ============================================================
-// Escape string for JSON
+// JSON escape
 // ============================================================
 
 std::string HttpServer::jsonEscape(
     const std::string& value
-) {
+)
+{
+
     std::string result;
+
 
 
     result.reserve(
@@ -968,101 +1122,142 @@ std::string HttpServer::jsonEscape(
     );
 
 
-    for (const char character :
-         value) {
 
-        switch (character) {
+    for(
+        char c :
+        value
+    )
+    {
+
+        switch(c)
+        {
 
             case '\\':
 
                 result += "\\\\";
+
                 break;
+
 
 
             case '"':
 
                 result += "\\\"";
+
                 break;
+
 
 
             case '\n':
 
                 result += "\\n";
+
                 break;
+
 
 
             case '\r':
 
                 result += "\\r";
+
                 break;
+
 
 
             case '\t':
 
                 result += "\\t";
+
                 break;
+
 
 
             default:
 
-                result += character;
+                result += c;
+
                 break;
+
         }
+
     }
 
 
+
     return result;
+
 }
 
 
+
+
+
 // ============================================================
-// Send complete HTTP response
+// Send all data
 // ============================================================
 
 bool HttpServer::sendAll(
     int fd,
     const std::string& data
-) {
+)
+{
+
     std::size_t sent =
         0;
 
 
-    while (sent <
-           data.size()) {
 
-        const ssize_t bytesSent =
+    while(
+        sent <
+        data.size()
+    )
+    {
+
+        ssize_t result =
             send(
                 fd,
-                data.data() +
-                    sent,
-                data.size() -
-                    sent,
+                data.data()
+                    + sent,
+                data.size()
+                    - sent,
                 MSG_NOSIGNAL
             );
 
 
-        if (bytesSent > 0) {
+
+        if(
+            result > 0
+        )
+        {
 
             sent +=
                 static_cast<std::size_t>(
-                    bytesSent
+                    result
                 );
 
 
             continue;
+
         }
 
 
-        if (bytesSent < 0 &&
-            errno == EINTR) {
 
+        if(
+            result < 0 &&
+            errno == EINTR
+        )
+        {
             continue;
         }
 
 
+
         return false;
+
     }
 
 
+
     return true;
+
 }

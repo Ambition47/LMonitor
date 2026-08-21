@@ -1,5 +1,6 @@
 #include "server/TcpServer.h"
 
+#include "alert/AlertManager.h"
 
 #include "http/HttpServer.h"
 
@@ -12,6 +13,8 @@
 #include "reactor/EventLoop.h"
 
 #include "serializer/MetricsDeserializer.h"
+
+#include "store/MetricsHistoryStore.h"
 
 #include "store/MetricsStore.h"
 #include "store/StateTracker.h"
@@ -100,6 +103,11 @@ void TcpServer::run()
 
     MetricsStore metricsStore;
 
+    MetricsHistoryStore historyStore(
+    120
+);
+    AlertManager alertManager;
+
 
 
     // ========================================================
@@ -122,7 +130,9 @@ void TcpServer::run()
 
     HttpServer httpServer(
         8080,
-        metricsStore
+        metricsStore,
+	historyStore,
+	alertManager
     );
 
 
@@ -493,11 +503,13 @@ void TcpServer::run()
 acceptor.setNewConnectionCallback(
 
     [
-        &eventLoop,
-        &threadPool,
-        &metricsStore,
-        &stateTracker,
-        &connections
+         &threadPool,
+    &metricsStore,
+    &historyStore,
+    &alertManager,
+    &stateTracker,
+    &eventLoop,
+    &connections
     ]
     (
         int clientFd,
@@ -596,6 +608,8 @@ acceptor.setNewConnectionCallback(
             [
                 &threadPool,
                 &metricsStore,
+		&historyStore,
+		&alertManager,
                 &stateTracker,
                 &eventLoop
             ]
@@ -623,6 +637,10 @@ acceptor.setNewConnectionCallback(
                         [
 
                             &metricsStore,
+
+			    &historyStore,
+
+			    &alertManager,
 
                             &stateTracker,
 
@@ -723,15 +741,60 @@ acceptor.setNewConnectionCallback(
 
 
                             try
-                            {
+                            
+			   {
+                               
+                                historyStore.add(
+                                  hostname,
+                                  cpu,
+                                  memory
+                                  );
 
-                                metricsStore.update(
+                                // ========================================================
+// Alert evaluation
+// ========================================================
 
-                                    std::move(
-                                        metrics
-                                    )
+auto alerts =
+    alertManager.update(
+        metrics
+    );
 
-                                );
+
+for(
+    const auto& alert :
+    alerts
+)
+{
+
+    if(
+        alert.state ==
+        AlertState::Firing
+    )
+    {
+
+        Logger::instance().warning(
+            "Alert firing: "
+            +
+            alert.hostname
+            +
+            " "
+            +
+            alert.metric
+        );
+
+    }
+
+}
+
+
+
+// ========================================================
+// Store latest metrics
+// ========================================================
+
+metricsStore.update(
+    std::move(metrics)
+);
 
                             }
                             catch(

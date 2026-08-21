@@ -206,9 +206,14 @@ add_executable(
     # Store
 
     src/store/MetricsStore.cpp
+    src/store/MetricsHistoryStore.cpp
 
     src/store/StateTracker.cpp
+    
+    # Alert
 
+    src/alert/AlertEvaluator.cpp
+    src/alert/AlertManager.cpp
 
 
     # Timer

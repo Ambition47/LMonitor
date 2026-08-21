@@ -10,6 +10,7 @@
 #include "collector/SystemCollector.h"
 #include "model/SystemMetrics.h"
 #include "serializer/MetricsSerializer.h"
+#include "network/TcpClient.h"
 
 #include <csignal>
 #include <cstddef>
@@ -19,10 +20,13 @@
 
 class MonitorAgent {
 public:
-    explicit MonitorAgent(
-    double intervalSeconds = 1.0
+    
+ explicit MonitorAgent(
+    double intervalSeconds = 1.0,
+    const std::string& serverIp = "127.0.0.1",
+    uint16_t serverPort = 9000
 );
-            
+
     void run(
         volatile std::sig_atomic_t& runningFlag
     );
@@ -52,6 +56,8 @@ private:
     ProcessCollector processCollector_;
 
     MetricsSerializer metricsSerializer_;
+
+    TcpClient tcpClient_;
 
     std::string networkInterface_;
 

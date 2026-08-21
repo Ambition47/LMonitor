@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
 
@@ -17,51 +18,81 @@
 
         body {
             margin: 0;
+
             font-family:
                 Arial,
                 "Microsoft YaHei",
                 sans-serif;
+
             background: #f4f6f8;
+
             color: #222;
         }
 
+
+        /* ====================================================
+           Header
+           ==================================================== */
+
         header {
             background: #202938;
+
             color: white;
+
             padding: 20px 32px;
         }
 
         header h1 {
             margin: 0;
+
             font-size: 26px;
         }
 
         header p {
             margin: 6px 0 0;
+
             opacity: 0.8;
         }
 
+
+        /* ====================================================
+           Main layout
+           ==================================================== */
+
         main {
-            max-width: 1200px;
+            max-width: 1400px;
+
             margin: 0 auto;
+
             padding: 24px;
         }
 
+
+        /* ====================================================
+           Summary cards
+           ==================================================== */
+
         .summary {
             display: grid;
+
             grid-template-columns:
                 repeat(
                     4,
                     minmax(150px, 1fr)
                 );
+
             gap: 16px;
+
             margin-bottom: 24px;
         }
 
         .card {
             background: white;
+
             border-radius: 10px;
+
             padding: 18px;
+
             box-shadow:
                 0 2px 8px
                 rgba(0, 0, 0, 0.06);
@@ -69,22 +100,34 @@
 
         .card-title {
             color: #667085;
+
             font-size: 14px;
         }
 
         .card-value {
             margin-top: 8px;
+
             font-size: 30px;
+
             font-weight: bold;
         }
 
+
+        /* ====================================================
+           Panel
+           ==================================================== */
+
         .panel {
             background: white;
+
             border-radius: 10px;
+
             padding: 20px;
+
             box-shadow:
                 0 2px 8px
                 rgba(0, 0, 0, 0.06);
+
             margin-bottom: 24px;
         }
 
@@ -92,21 +135,40 @@
             margin-top: 0;
         }
 
+        .panel-description {
+            color: #667085;
+
+            font-size: 13px;
+
+            margin-top: -8px;
+
+            margin-bottom: 16px;
+        }
+
+
+        /* ====================================================
+           Host table
+           ==================================================== */
+
         table {
             width: 100%;
+
             border-collapse: collapse;
         }
 
         th,
         td {
             padding: 12px;
+
             text-align: left;
+
             border-bottom:
                 1px solid #eaecf0;
         }
 
         th {
             color: #667085;
+
             font-size: 14px;
         }
 
@@ -118,72 +180,241 @@
             background: #f9fafb;
         }
 
+        tbody tr.selected {
+            background: #eef4ff;
+        }
+
+
+        /* ====================================================
+           Status
+           ==================================================== */
+
         .status {
             display: inline-block;
+
             padding: 4px 9px;
+
             border-radius: 12px;
+
             font-size: 12px;
+
             font-weight: bold;
         }
 
         .ONLINE {
             background: #dcfae6;
+
             color: #067647;
         }
 
         .STALE {
             background: #fef0c7;
+
             color: #b54708;
         }
 
         .OFFLINE {
             background: #fee4e2;
+
             color: #b42318;
         }
 
+
+        /* ====================================================
+           Detail
+           ==================================================== */
+
         .detail-grid {
             display: grid;
+
             grid-template-columns:
                 repeat(
-                    3,
+                    4,
                     minmax(180px, 1fr)
                 );
+
             gap: 12px;
         }
 
         .detail-item {
             background: #f9fafb;
+
             border-radius: 8px;
+
             padding: 14px;
         }
 
         .detail-label {
             color: #667085;
+
             font-size: 13px;
         }
 
         .detail-value {
             margin-top: 6px;
+
             font-size: 18px;
+
             font-weight: bold;
         }
+
+
+        /* ====================================================
+           Charts
+           ==================================================== */
+
+        .chart-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    2,
+                    minmax(0, 1fr)
+                );
+
+            gap: 20px;
+        }
+
+        .chart-card {
+            border:
+                1px solid #eaecf0;
+
+            border-radius: 10px;
+
+            padding: 16px;
+
+            min-width: 0;
+        }
+
+        .chart-card h3 {
+            margin:
+                0
+                0
+                6px;
+
+            font-size: 16px;
+        }
+
+        .chart-current {
+            color: #667085;
+
+            margin-bottom: 12px;
+
+            font-size: 14px;
+        }
+
+        .canvas-container {
+            width: 100%;
+
+            height: 300px;
+
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+
+            width: 100%;
+
+            height: 100%;
+        }
+
+
+        /* ====================================================
+           Processes
+           ==================================================== */
+
+        .process-panel {
+            margin-top: 20px;
+        }
+
+
+        /* ====================================================
+           Messages
+           ==================================================== */
 
         .muted {
             color: #667085;
         }
 
+	/* ====================================================
+   Alerts
+   ==================================================== */
+
+
+.alert-item {
+
+    border-radius: 8px;
+
+    padding: 14px;
+
+    margin-bottom: 12px;
+
+    background: #f9fafb;
+
+}
+
+
+.alert-item.FIRING {
+
+    background: #fee4e2;
+
+    border-left: 5px solid #b42318;
+
+}
+
+
+.alert-item.PENDING {
+
+    background: #fef0c7;
+
+    border-left: 5px solid #b54708;
+
+}
+
+
+.alert-title {
+
+    font-weight: bold;
+
+    font-size: 16px;
+
+}
+
+
+.alert-detail {
+
+    margin-top: 6px;
+
+    color: #667085;
+
+    font-size: 14px;
+
+}
+
         #errorMessage {
             display: none;
+
             background: #fee4e2;
+
             color: #b42318;
+
             padding: 12px;
+
             border-radius: 8px;
+
             margin-bottom: 16px;
         }
 
+
+        /* ====================================================
+           Responsive
+           ==================================================== */
+
         @media (
-            max-width: 800px
+            max-width: 1000px
         ) {
+
             .summary {
                 grid-template-columns:
                     repeat(
@@ -194,35 +425,82 @@
 
             .detail-grid {
                 grid-template-columns:
+                    repeat(
+                        2,
+                        1fr
+                    );
+            }
+
+            .chart-grid {
+                grid-template-columns:
+                    1fr;
+            }
+        }
+
+
+        @media (
+            max-width: 650px
+        ) {
+
+            main {
+                padding: 12px;
+            }
+
+            .summary {
+                grid-template-columns:
+                    1fr;
+            }
+
+            .detail-grid {
+                grid-template-columns:
                     1fr;
             }
 
             table {
-                font-size: 13px;
+                font-size: 12px;
             }
         }
     </style>
 </head>
 
+
 <body>
 
+
 <header>
-    <h1>LMonitor Dashboard</h1>
+
+    <h1>
+        LMonitor Dashboard
+    </h1>
 
     <p>
         Linux 分布式服务器实时监控平台
     </p>
+
 </header>
 
 
 <main>
 
-    <div id="errorMessage"></div>
 
+    <!-- ======================================================
+         Error
+         ====================================================== -->
+
+    <div id="errorMessage">
+
+    </div>
+
+
+    <!-- ======================================================
+         Summary
+         ====================================================== -->
 
     <section class="summary">
 
+
         <div class="card">
+
             <div class="card-title">
                 监控主机
             </div>
@@ -233,10 +511,12 @@
             >
                 0
             </div>
+
         </div>
 
 
         <div class="card">
+
             <div class="card-title">
                 ONLINE
             </div>
@@ -247,10 +527,12 @@
             >
                 0
             </div>
+
         </div>
 
 
         <div class="card">
+
             <div class="card-title">
                 STALE
             </div>
@@ -261,10 +543,12 @@
             >
                 0
             </div>
+
         </div>
 
 
         <div class="card">
+
             <div class="card-title">
                 OFFLINE
             </div>
@@ -275,36 +559,125 @@
             >
                 0
             </div>
+
         </div>
+
+
+	<div class="card">
+
+    <div class="card-title">
+        ACTIVE ALERTS
+    </div>
+
+
+    <div
+        class="card-value"
+        id="alertCount"
+    >
+        0
+    </div>
+
+</div>
+
 
     </section>
 
 
+    <!-- ======================================================
+         Hosts
+         ====================================================== -->
+
+
+
+<!-- ======================================================
+     Alerts
+     ====================================================== -->
+
+<section class="panel">
+
+
+    <h2>
+        Active Alerts
+    </h2>
+
+
+    <p class="panel-description">
+        当前正在触发的系统告警。
+    </p>
+
+
+    <div id="alertsContainer">
+
+        <div class="muted">
+            正在读取告警信息...
+        </div>
+
+
+    </div>
+
+
+</section>
+
+
+
+
+
+
+ 
     <section class="panel">
 
-        <h2>主机列表</h2>
+        <h2>
+            主机列表
+        </h2>
+
+        <p class="panel-description">
+            点击某台主机，可以查看实时详细信息和历史曲线。
+        </p>
 
 
         <table>
 
             <thead>
+
             <tr>
-                <th>Hostname</th>
-                <th>Status</th>
-                <th>CPU</th>
-                <th>Memory</th>
-                <th>Load 1m</th>
-                <th>Uptime</th>
+
+                <th>
+                    Hostname
+                </th>
+
+                <th>
+                    Status
+                </th>
+
+                <th>
+                    CPU
+                </th>
+
+                <th>
+                    Memory
+                </th>
+
+                <th>
+                    Load 1m
+                </th>
+
+                <th>
+                    Uptime
+                </th>
+
             </tr>
+
             </thead>
 
 
             <tbody id="hostsTable">
 
             <tr>
+
                 <td colspan="6">
                     正在读取监控数据...
                 </td>
+
             </tr>
 
             </tbody>
@@ -314,9 +687,95 @@
     </section>
 
 
+    <!-- ======================================================
+         Charts
+         ====================================================== -->
+
     <section class="panel">
 
-        <h2>主机详情</h2>
+        <h2>
+            实时性能曲线
+        </h2>
+
+
+        <p
+            id="chartHostName"
+            class="panel-description"
+        >
+            请选择一台主机
+        </p>
+
+
+        <div class="chart-grid">
+
+
+            <!-- CPU Chart -->
+
+            <div class="chart-card">
+
+                <h3>
+                    CPU Usage
+                </h3>
+
+                <div
+                    id="cpuCurrent"
+                    class="chart-current"
+                >
+                    当前：--
+                </div>
+
+                <div class="canvas-container">
+
+                    <canvas id="cpuChart">
+
+                    </canvas>
+
+                </div>
+
+            </div>
+
+
+            <!-- Memory Chart -->
+
+            <div class="chart-card">
+
+                <h3>
+                    Memory Usage
+                </h3>
+
+                <div
+                    id="memoryCurrent"
+                    class="chart-current"
+                >
+                    当前：--
+                </div>
+
+                <div class="canvas-container">
+
+                    <canvas id="memoryChart">
+
+                    </canvas>
+
+                </div>
+
+            </div>
+
+
+        </div>
+
+    </section>
+
+
+    <!-- ======================================================
+         Host detail
+         ====================================================== -->
+
+    <section class="panel">
+
+        <h2>
+            主机详情
+        </h2>
+
 
         <div
             id="hostDetail"
@@ -325,501 +784,1970 @@
             点击上方某台主机查看详细信息。
         </div>
 
+
+        <div
+            id="processContainer"
+            class="process-panel"
+        >
+
+        </div>
+
     </section>
+
 
 </main>
 
 
 <script>
-    const hostsTable =
-        document.getElementById(
-            "hostsTable"
+
+
+// ============================================================
+// DOM
+// ============================================================
+
+const hostsTable =
+    document.getElementById(
+        "hostsTable"
+    );
+
+
+const hostDetail =
+    document.getElementById(
+        "hostDetail"
+    );
+
+
+const processContainer =
+    document.getElementById(
+        "processContainer"
+    );
+
+
+const errorMessage =
+    document.getElementById(
+        "errorMessage"
+    );
+
+const alertCount =
+    document.getElementById(
+        "alertCount"
+    );
+
+const alertsContainer =
+    document.getElementById(
+        "alertsContainer"
+    );
+
+const cpuCanvas =
+    document.getElementById(
+        "cpuChart"
+    );
+
+
+const memoryCanvas =
+    document.getElementById(
+        "memoryChart"
+    );
+
+
+const cpuCurrent =
+    document.getElementById(
+        "cpuCurrent"
+    );
+
+
+const memoryCurrent =
+    document.getElementById(
+        "memoryCurrent"
+    );
+
+
+const chartHostName =
+    document.getElementById(
+        "chartHostName"
+    );
+
+
+// ============================================================
+// State
+// ============================================================
+
+let selectedHostname =
+    null;
+
+
+let latestHistory =
+    [];
+
+
+// ============================================================
+// Helpers
+// ============================================================
+
+function showError(
+    message
+) {
+
+    errorMessage.textContent =
+        message;
+
+
+    errorMessage.style.display =
+        "block";
+}
+
+
+function clearError() {
+
+    errorMessage.style.display =
+        "none";
+}
+
+
+function formatPercent(
+    value
+) {
+
+    return Number(
+        value
+    ).toFixed(
+        2
+    ) + "%";
+}
+
+
+function formatUptime(
+    seconds
+) {
+
+    seconds =
+        Number(
+            seconds
         );
 
 
-    const hostDetail =
-        document.getElementById(
-            "hostDetail"
+    const days =
+        Math.floor(
+            seconds /
+            86400
         );
 
 
-    const errorMessage =
-        document.getElementById(
-            "errorMessage"
+    const hours =
+        Math.floor(
+            (
+                seconds %
+                86400
+            ) /
+            3600
         );
 
 
-    let selectedHostname =
-        null;
-
-
-    function showError(message) {
-
-        errorMessage.textContent =
-            message;
-
-
-        errorMessage.style.display =
-            "block";
-    }
-
-
-    function clearError() {
-
-        errorMessage.style.display =
-            "none";
-    }
-
-
-    function formatPercent(value) {
-
-        return Number(value)
-            .toFixed(2) + "%";
-    }
-
-
-    function formatUptime(seconds) {
-
-        seconds =
-            Number(seconds);
-
-
-        const days =
-            Math.floor(
-                seconds / 86400
-            );
-
-
-        const hours =
-            Math.floor(
-                (
-                    seconds %
-                    86400
-                ) /
+    const minutes =
+        Math.floor(
+            (
+                seconds %
                 3600
-            );
+            ) /
+            60
+        );
 
 
-        const minutes =
-            Math.floor(
-                (
-                    seconds %
-                    3600
-                ) /
-                60
-            );
+    return (
+        days +
+        "d " +
+        hours +
+        "h " +
+        minutes +
+        "m"
+    );
+}
 
+
+function formatBytes(
+    bytes
+) {
+
+    bytes =
+        Number(
+            bytes
+        );
+
+
+    if (
+        bytes >=
+        1024 *
+        1024 *
+        1024
+    ) {
 
         return (
-            days +
-            "d " +
-            hours +
-            "h " +
-            minutes +
-            "m"
-        );
+            bytes /
+            1024 /
+            1024 /
+            1024
+        ).toFixed(
+            2
+        ) + " GiB";
     }
 
 
-    function bytesPerSecond(value) {
+    if (
+        bytes >=
+        1024 *
+        1024
+    ) {
 
-        value =
-            Number(value);
+        return (
+            bytes /
+            1024 /
+            1024
+        ).toFixed(
+            2
+        ) + " MiB";
+    }
 
 
-        if (
-            value >=
-            1024 * 1024
-        ) {
+    if (
+        bytes >=
+        1024
+    ) {
 
-            return (
-                value /
-                1024 /
-                1024
-            ).toFixed(2) +
-            " MiB/s";
-        }
+        return (
+            bytes /
+            1024
+        ).toFixed(
+            2
+        ) + " KiB";
+    }
 
+
+    return bytes +
+        " B";
+}
+
+
+function bytesPerSecond(
+    value
+) {
+
+    value =
+        Number(
+            value
+        );
+
+
+    if (
+        value >=
+        1024 *
+        1024
+    ) {
 
         return (
             value /
+            1024 /
             1024
-        ).toFixed(2) +
-        " KiB/s";
+        ).toFixed(
+            2
+        ) + " MiB/s";
     }
 
 
-    async function loadHosts() {
-
-        try {
-
-            const response =
-                await fetch(
-                    "/api/hosts",
-                    {
-                        cache: "no-store"
-                    }
-                );
+    return (
+        value /
+        1024
+    ).toFixed(
+        2
+    ) + " KiB/s";
+}
 
 
-            if (!response.ok) {
+function detailItem(
+    label,
+    value
+) {
 
-                throw new Error(
-                    "HTTP " +
-                    response.status
-                );
-            }
-
-
-            const hosts =
-                await response.json();
+    const item =
+        document.createElement(
+            "div"
+        );
 
 
-            clearError();
+    item.className =
+        "detail-item";
 
 
-            renderSummary(
-                hosts
-            );
+    const labelElement =
+        document.createElement(
+            "div"
+        );
 
 
-            renderHosts(
-                hosts
-            );
+    labelElement.className =
+        "detail-label";
 
 
-            if (selectedHostname) {
-
-                await loadHostDetail(
-                    selectedHostname
-                );
-            }
-
-        } catch (error) {
-
-            showError(
-                "读取监控数据失败：" +
-                error.message
-            );
-        }
-    }
+    labelElement.textContent =
+        label;
 
 
-    function renderSummary(hosts) {
-
-        document.getElementById(
-            "hostCount"
-        ).textContent =
-            hosts.length;
+    const valueElement =
+        document.createElement(
+            "div"
+        );
 
 
-        document.getElementById(
-            "onlineCount"
-        ).textContent =
-            hosts.filter(
-                host =>
-                    host.status ===
-                    "ONLINE"
-            ).length;
+    valueElement.className =
+        "detail-value";
 
 
-        document.getElementById(
-            "staleCount"
-        ).textContent =
-            hosts.filter(
-                host =>
-                    host.status ===
-                    "STALE"
-            ).length;
+    valueElement.textContent =
+        value;
 
 
-        document.getElementById(
-            "offlineCount"
-        ).textContent =
-            hosts.filter(
-                host =>
-                    host.status ===
-                    "OFFLINE"
-            ).length;
-    }
+    item.appendChild(
+        labelElement
+    );
 
 
-    function renderHosts(hosts) {
-
-        hostsTable.innerHTML =
-            "";
-
-
-        if (hosts.length === 0) {
-
-            hostsTable.innerHTML =
-                `
-                <tr>
-                    <td colspan="6">
-                        暂无 Agent 数据
-                    </td>
-                </tr>
-                `;
+    item.appendChild(
+        valueElement
+    );
 
 
-            return;
-        }
+    return item;
+}
 
 
-        for (const host of hosts) {
+// ============================================================
+// Load host list
+// ============================================================
 
-            const row =
-                document.createElement(
-                    "tr"
-                );
-
-
-            row.innerHTML =
-                `
-                <td>${escapeHtml(host.hostname)}</td>
-
-                <td>
-                    <span class="status ${host.status}">
-                        ${host.status}
-                    </span>
-                </td>
-
-                <td>
-                    ${formatPercent(host.cpu)}
-                </td>
-
-                <td>
-                    ${formatPercent(host.memory)}
-                </td>
-
-                <td>
-                    ${Number(host.load1).toFixed(2)}
-                </td>
-
-                <td>
-                    ${formatUptime(host.uptime)}
-                </td>
-                `;
+// ============================================================
+// Load alerts
+// ============================================================
 
 
-            row.addEventListener(
-                "click",
-                () => {
+async function loadAlerts()
+{
 
-                    selectedHostname =
-                        host.hostname;
+    try
+    {
 
-
-                    loadHostDetail(
-                        host.hostname
-                    );
+        const response =
+            await fetch(
+                "/api/alerts",
+                {
+                    cache:"no-store"
                 }
             );
 
 
-            hostsTable.appendChild(
-                row
+        if(!response.ok)
+        {
+            throw new Error(
+                "HTTP "
+                +
+                response.status
             );
         }
-    }
 
 
-    async function loadHostDetail(
-        hostname
-    ) {
-
-        try {
-
-            const response =
-                await fetch(
-                    "/api/hosts/" +
-                    encodeURIComponent(
-                        hostname
-                    ),
-                    {
-                        cache: "no-store"
-                    }
-                );
+        const alerts =
+            await response.json();
 
 
-            if (!response.ok) {
 
-                throw new Error(
-                    "HTTP " +
-                    response.status
-                );
-            }
-
-
-            const host =
-                await response.json();
-
-
-            renderHostDetail(
-                host
-            );
-
-        } catch (error) {
-
-            hostDetail.innerHTML =
-                "读取主机详情失败";
-        }
-    }
-
-
-    function renderHostDetail(host) {
-
-        hostDetail.classList.remove(
-            "muted"
+        renderAlerts(
+            alerts
         );
 
 
-        hostDetail.innerHTML =
+    }
+    catch(error)
+    {
+
+        alertsContainer.innerHTML =
             `
-            <div class="detail-grid">
-
-                ${detail(
-                    "Hostname",
-                    escapeHtml(
-                        host.hostname
-                    )
-                )}
-
-                ${detail(
-                    "Status",
-                    host.status
-                )}
-
-                ${detail(
-                    "CPU",
-                    formatPercent(
-                        host.cpu
-                    )
-                )}
-
-                ${detail(
-                    "Memory",
-                    formatPercent(
-                        host.memory
-                            .usage_percent
-                    )
-                )}
-
-                ${detail(
-                    "Load 1m",
-                    Number(
-                        host.load.load1
-                    ).toFixed(2)
-                )}
-
-                ${detail(
-                    "Logical CPUs",
-                    host.logical_cpus
-                )}
-
-                ${detail(
-                    "Disk",
-                    formatPercent(
-                        host.disk
-                            .usage_percent
-                    )
-                )}
-
-                ${detail(
-                    "RX",
-                    bytesPerSecond(
-                        host.network
-                            .rx_bytes_per_second
-                    )
-                )}
-
-                ${detail(
-                    "TX",
-                    bytesPerSecond(
-                        host.network
-                            .tx_bytes_per_second
-                    )
-                )}
-
-                ${detail(
-                    "Uptime",
-                    formatUptime(
-                        host.uptime_seconds
-                    )
-                )}
-
-                ${detail(
-                    "Interface",
-                    escapeHtml(
-                        host.network
-                            .interface
-                    )
-                )}
-
-                ${detail(
-                    "Top Processes",
-                    host.processes.length
-                )}
-
+            <div class="muted">
+            读取告警失败：
+            ${error.message}
             </div>
             `;
+
     }
 
+}
 
-    function detail(
-        label,
-        value
+
+
+async function loadHosts() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/hosts",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                "HTTP " +
+                response.status
+            );
+        }
+
+
+        const hosts =
+            await response.json();
+
+
+        clearError();
+
+
+        renderSummary(
+            hosts
+        );
+
+
+        renderHosts(
+            hosts
+        );
+
+
+        // ----------------------------------------------------
+        // Automatically select first host
+        // ----------------------------------------------------
+
+        if (
+            !selectedHostname &&
+            hosts.length >
+            0
+        ) {
+
+            selectedHostname =
+                hosts[0].hostname;
+        }
+
+
+        if (
+            selectedHostname
+        ) {
+
+            await Promise.all(
+
+                [
+                    loadHostDetail(
+                        selectedHostname
+                    ),
+
+                    loadHistory(
+                        selectedHostname
+                    )
+                ]
+
+            );
+        }
+
+    } catch (
+        error
     ) {
 
-        return `
-            <div class="detail-item">
+        showError(
+            "读取监控数据失败：" +
+            error.message
+        );
+    }
+}
 
-                <div class="detail-label">
-                    ${label}
-                </div>
 
-                <div class="detail-value">
-                    ${value}
-                </div>
+function renderAlerts(
+    alerts
+)
+{
+    alertCount.textContent =
+        alerts.length;
 
+    alertsContainer.innerHTML =
+        "";
+
+
+    if(
+        alerts.length === 0
+    )
+    {
+
+        alertsContainer.innerHTML =
+            `
+            <div class="muted">
+            当前没有活动告警。
             </div>
-        `;
+            `;
+
+        return;
+
     }
 
 
-    function escapeHtml(value) {
 
-        const element =
+    for(
+        const alert of alerts
+    )
+    {
+
+
+        const div =
             document.createElement(
                 "div"
             );
 
 
-        element.textContent =
-            value ?? "";
+        div.className =
+            "alert-item "
+            +
+            alert.state;
 
 
-        return element.innerHTML;
+
+        div.innerHTML =
+            `
+            <div class="alert-title">
+            ${alert.metric}
+            :
+            ${alert.state}
+            </div>
+
+
+            <div class="alert-detail">
+
+            Host:
+            ${alert.hostname}
+
+            <br>
+
+            Current:
+            ${Number(alert.current_value).toFixed(2)}
+
+            <br>
+
+            Threshold:
+            ${Number(alert.threshold).toFixed(2)}
+
+            <br>
+
+            ${alert.message}
+
+            </div>
+            `;
+
+
+
+        alertsContainer.appendChild(
+            div
+        );
+
+    }
+
+}
+
+
+
+// ============================================================
+// Summary
+// ============================================================
+
+function renderSummary(
+    hosts
+) {
+
+    document.getElementById(
+        "hostCount"
+    ).textContent =
+        hosts.length;
+
+
+    document.getElementById(
+        "onlineCount"
+    ).textContent =
+        hosts.filter(
+
+            host =>
+                host.status ===
+                "ONLINE"
+
+        ).length;
+
+
+    document.getElementById(
+        "staleCount"
+    ).textContent =
+        hosts.filter(
+
+            host =>
+                host.status ===
+                "STALE"
+
+        ).length;
+
+
+    document.getElementById(
+        "offlineCount"
+    ).textContent =
+        hosts.filter(
+
+            host =>
+                host.status ===
+                "OFFLINE"
+
+        ).length;
+}
+
+
+// ============================================================
+// Host table
+// ============================================================
+
+function renderHosts(
+    hosts
+) {
+
+    hostsTable.innerHTML =
+        "";
+
+
+    if (
+        hosts.length ===
+        0
+    ) {
+
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+
+        const cell =
+            document.createElement(
+                "td"
+            );
+
+
+        cell.colSpan =
+            6;
+
+
+        cell.textContent =
+            "暂无 Agent 数据";
+
+
+        row.appendChild(
+            cell
+        );
+
+
+        hostsTable.appendChild(
+            row
+        );
+
+
+        return;
+    }
+
+
+    for (
+        const host of hosts
+    ) {
+
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+
+        if (
+            host.hostname ===
+            selectedHostname
+        ) {
+
+            row.classList.add(
+                "selected"
+            );
+        }
+
+
+        appendTextCell(
+            row,
+            host.hostname
+        );
+
+
+        const statusCell =
+            document.createElement(
+                "td"
+            );
+
+
+        const status =
+            document.createElement(
+                "span"
+            );
+
+
+        status.className =
+            "status " +
+            host.status;
+
+
+        status.textContent =
+            host.status;
+
+
+        statusCell.appendChild(
+            status
+        );
+
+
+        row.appendChild(
+            statusCell
+        );
+
+
+        appendTextCell(
+            row,
+            formatPercent(
+                host.cpu
+            )
+        );
+
+
+        appendTextCell(
+            row,
+            formatPercent(
+                host.memory
+            )
+        );
+
+
+        appendTextCell(
+            row,
+            Number(
+                host.load1
+            ).toFixed(
+                2
+            )
+        );
+
+
+        appendTextCell(
+            row,
+            formatUptime(
+                host.uptime
+            )
+        );
+
+
+        row.addEventListener(
+
+            "click",
+
+            async () => {
+
+                selectedHostname =
+                    host.hostname;
+
+
+                renderHosts(
+                    hosts
+                );
+
+
+                await Promise.all(
+
+                    [
+                        loadHostDetail(
+                            host.hostname
+                        ),
+
+                        loadHistory(
+                            host.hostname
+                        )
+                    ]
+
+                );
+            }
+
+        );
+
+
+        hostsTable.appendChild(
+            row
+        );
+    }
+}
+
+
+function appendTextCell(
+    row,
+    value
+) {
+
+    const cell =
+        document.createElement(
+            "td"
+        );
+
+
+    cell.textContent =
+        value;
+
+
+    row.appendChild(
+        cell
+    );
+}
+
+
+// ============================================================
+// Host detail
+// ============================================================
+
+async function loadHostDetail(
+    hostname
+) {
+
+    try {
+
+        const response =
+            await fetch(
+
+                "/api/hosts/" +
+                encodeURIComponent(
+                    hostname
+                ),
+
+                {
+                    cache: "no-store"
+                }
+
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                "HTTP " +
+                response.status
+            );
+        }
+
+
+        const host =
+            await response.json();
+
+
+        renderHostDetail(
+            host
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        hostDetail.textContent =
+            "读取主机详情失败：" +
+            error.message;
+    }
+}
+
+
+// ============================================================
+// Render host detail
+// ============================================================
+
+function renderHostDetail(
+    host
+) {
+
+    hostDetail.classList.remove(
+        "muted"
+    );
+
+
+    hostDetail.innerHTML =
+        "";
+
+
+    const grid =
+        document.createElement(
+            "div"
+        );
+
+
+    grid.className =
+        "detail-grid";
+
+
+    grid.appendChild(
+        detailItem(
+            "Hostname",
+            host.hostname
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Status",
+            host.status
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "CPU",
+            formatPercent(
+                host.cpu
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Memory",
+            formatPercent(
+                host.memory
+                    .usage_percent
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Logical CPUs",
+            host.logical_cpus
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Uptime",
+            formatUptime(
+                host.uptime_seconds
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Load 1m",
+            Number(
+                host.load.load1
+            ).toFixed(
+                2
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Load 5m",
+            Number(
+                host.load.load5
+            ).toFixed(
+                2
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Disk Usage",
+            formatPercent(
+                host.disk
+                    .usage_percent
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Disk Used",
+            formatBytes(
+                host.disk
+                    .used_bytes
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Interface",
+            host.network
+                .interface
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Network RX",
+            bytesPerSecond(
+                host.network
+                    .rx_bytes_per_second
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Network TX",
+            bytesPerSecond(
+                host.network
+                    .tx_bytes_per_second
+            )
+        )
+    );
+
+
+    grid.appendChild(
+        detailItem(
+            "Processes",
+            host.processes.length
+        )
+    );
+
+
+    hostDetail.appendChild(
+        grid
+    );
+
+
+    renderProcesses(
+        host.processes
+    );
+}
+
+
+// ============================================================
+// Process table
+// ============================================================
+
+function renderProcesses(
+    processes
+) {
+
+    processContainer.innerHTML =
+        "";
+
+
+    const title =
+        document.createElement(
+            "h3"
+        );
+
+
+    title.textContent =
+        "Top Processes";
+
+
+    processContainer.appendChild(
+        title
+    );
+
+
+    if (
+        processes.length ===
+        0
+    ) {
+
+        const empty =
+            document.createElement(
+                "p"
+            );
+
+
+        empty.className =
+            "muted";
+
+
+        empty.textContent =
+            "暂无进程数据";
+
+
+        processContainer.appendChild(
+            empty
+        );
+
+
+        return;
+    }
+
+
+    const table =
+        document.createElement(
+            "table"
+        );
+
+
+    const thead =
+        document.createElement(
+            "thead"
+        );
+
+
+    thead.innerHTML =
+        `
+        <tr>
+            <th>PID</th>
+            <th>Name</th>
+            <th>CPU</th>
+            <th>Memory</th>
+            <th>RSS</th>
+        </tr>
+        `;
+
+
+    table.appendChild(
+        thead
+    );
+
+
+    const tbody =
+        document.createElement(
+            "tbody"
+        );
+
+
+    for (
+        const process of processes
+    ) {
+
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+
+        appendTextCell(
+            row,
+            process.pid
+        );
+
+
+        appendTextCell(
+            row,
+            process.name
+        );
+
+
+        appendTextCell(
+            row,
+            formatPercent(
+                process.cpu
+            )
+        );
+
+
+        appendTextCell(
+            row,
+            formatPercent(
+                process.memory
+            )
+        );
+
+
+        appendTextCell(
+            row,
+            formatBytes(
+                Number(
+                    process.rss_kb
+                ) *
+                1024
+            )
+        );
+
+
+        tbody.appendChild(
+            row
+        );
+    }
+
+
+    table.appendChild(
+        tbody
+    );
+
+
+    processContainer.appendChild(
+        table
+    );
+}
+
+
+// ============================================================
+// Load historical samples
+// ============================================================
+
+async function loadHistory(
+    hostname
+) {
+
+    try {
+
+        const response =
+            await fetch(
+
+                "/api/hosts/" +
+                encodeURIComponent(
+                    hostname
+                ) +
+                "/history",
+
+                {
+                    cache: "no-store"
+                }
+
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                "HTTP " +
+                response.status
+            );
+        }
+
+
+        latestHistory =
+            await response.json();
+
+
+        chartHostName.textContent =
+            "当前主机：" +
+            hostname +
+            " · 最近 " +
+            latestHistory.length +
+            " 个采样点";
+
+
+        renderCharts();
+
+
+    } catch (
+        error
+    ) {
+
+        latestHistory =
+            [];
+
+
+        chartHostName.textContent =
+            "历史数据读取失败：" +
+            error.message;
+
+
+        renderCharts();
+    }
+}
+
+
+// ============================================================
+// Render charts
+// ============================================================
+
+function renderCharts() {
+
+    const cpuValues =
+        latestHistory.map(
+
+            point =>
+                Number(
+                    point.cpu
+                )
+
+        );
+
+
+    const memoryValues =
+        latestHistory.map(
+
+            point =>
+                Number(
+                    point.memory
+                )
+
+        );
+
+
+    const timestamps =
+        latestHistory.map(
+
+            point =>
+                Number(
+                    point.timestamp
+                )
+
+        );
+
+
+    if (
+        cpuValues.length >
+        0
+    ) {
+
+        cpuCurrent.textContent =
+            "当前：" +
+            formatPercent(
+                cpuValues[
+                    cpuValues.length -
+                    1
+                ]
+            );
+
+
+        memoryCurrent.textContent =
+            "当前：" +
+            formatPercent(
+                memoryValues[
+                    memoryValues.length -
+                    1
+                ]
+            );
+
+    } else {
+
+        cpuCurrent.textContent =
+            "当前：--";
+
+
+        memoryCurrent.textContent =
+            "当前：--";
+    }
+
+
+    drawLineChart(
+        cpuCanvas,
+        timestamps,
+        cpuValues,
+        "CPU Usage (%)",
+        0,
+        100
+    );
+
+
+    drawLineChart(
+        memoryCanvas,
+        timestamps,
+        memoryValues,
+        "Memory Usage (%)",
+        0,
+        100
+    );
+}
+
+
+// ============================================================
+// Canvas chart
+// ============================================================
+
+function drawLineChart(
+    canvas,
+    timestamps,
+    values,
+    label,
+    minValue,
+    maxValue
+) {
+
+    const container =
+        canvas.parentElement;
+
+
+    const cssWidth =
+        container.clientWidth;
+
+
+    const cssHeight =
+        container.clientHeight;
+
+
+    const ratio =
+        window.devicePixelRatio ||
+        1;
+
+
+    canvas.width =
+        Math.floor(
+            cssWidth *
+            ratio
+        );
+
+
+    canvas.height =
+        Math.floor(
+            cssHeight *
+            ratio
+        );
+
+
+    const context =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    context.setTransform(
+        ratio,
+        0,
+        0,
+        ratio,
+        0,
+        0
+    );
+
+
+    const width =
+        cssWidth;
+
+
+    const height =
+        cssHeight;
+
+
+    context.clearRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    const left =
+        52;
+
+
+    const right =
+        18;
+
+
+    const top =
+        24;
+
+
+    const bottom =
+        42;
+
+
+    const plotWidth =
+        width -
+        left -
+        right;
+
+
+    const plotHeight =
+        height -
+        top -
+        bottom;
+
+
+    // --------------------------------------------------------
+    // Background
+    // --------------------------------------------------------
+
+    context.fillStyle =
+        "#ffffff";
+
+
+    context.fillRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    // --------------------------------------------------------
+    // Horizontal grid
+    // --------------------------------------------------------
+
+    context.font =
+        "12px Arial";
+
+
+    context.textAlign =
+        "right";
+
+
+    context.textBaseline =
+        "middle";
+
+
+    const gridCount =
+        5;
+
+
+    for (
+        let index = 0;
+        index <= gridCount;
+        index++
+    ) {
+
+        const y =
+            top +
+            (
+                plotHeight *
+                index /
+                gridCount
+            );
+
+
+        const value =
+            maxValue -
+            (
+                maxValue -
+                minValue
+            ) *
+            index /
+            gridCount;
+
+
+        context.beginPath();
+
+
+        context.strokeStyle =
+            "#eaecf0";
+
+
+        context.lineWidth =
+            1;
+
+
+        context.moveTo(
+            left,
+            y
+        );
+
+
+        context.lineTo(
+            left +
+            plotWidth,
+            y
+        );
+
+
+        context.stroke();
+
+
+        context.fillStyle =
+            "#667085";
+
+
+        context.fillText(
+            value.toFixed(
+                0
+            ) + "%",
+            left -
+            8,
+            y
+        );
     }
 
 
     // --------------------------------------------------------
-    // Initial load
+    // No data
     // --------------------------------------------------------
 
-    loadHosts();
+    if (
+        values.length ===
+        0
+    ) {
+
+        context.textAlign =
+            "center";
+
+
+        context.fillStyle =
+            "#98a2b3";
+
+
+        context.font =
+            "14px Arial";
+
+
+        context.fillText(
+            "等待历史数据...",
+            width /
+            2,
+            height /
+            2
+        );
+
+
+        return;
+    }
 
 
     // --------------------------------------------------------
-    // Refresh every two seconds
+    // Line
     // --------------------------------------------------------
 
-    setInterval(
-        loadHosts,
-        2000
+    context.beginPath();
+
+
+    context.strokeStyle =
+        "#1570ef";
+
+
+    context.lineWidth =
+        2;
+
+
+    context.lineJoin =
+        "round";
+
+
+    context.lineCap =
+        "round";
+
+
+    for (
+        let index = 0;
+        index < values.length;
+        index++
+    ) {
+
+        let x;
+
+
+        if (
+            values.length ===
+            1
+        ) {
+
+            x =
+                left +
+                plotWidth /
+                2;
+
+        } else {
+
+            x =
+                left +
+                plotWidth *
+                index /
+                (
+                    values.length -
+                    1
+                );
+        }
+
+
+        const boundedValue =
+            Math.max(
+                minValue,
+                Math.min(
+                    maxValue,
+                    values[index]
+                )
+            );
+
+
+        const y =
+            top +
+            plotHeight *
+            (
+                maxValue -
+                boundedValue
+            ) /
+            (
+                maxValue -
+                minValue
+            );
+
+
+        if (
+            index ===
+            0
+        ) {
+
+            context.moveTo(
+                x,
+                y
+            );
+
+        } else {
+
+            context.lineTo(
+                x,
+                y
+            );
+        }
+    }
+
+
+    context.stroke();
+
+
+    // --------------------------------------------------------
+    // Last point
+    // --------------------------------------------------------
+
+    const lastIndex =
+        values.length -
+        1;
+
+
+    const lastX =
+        values.length ===
+        1
+            ?
+            left +
+            plotWidth /
+            2
+            :
+            left +
+            plotWidth;
+
+
+    const boundedLast =
+        Math.max(
+            minValue,
+            Math.min(
+                maxValue,
+                values[
+                    lastIndex
+                ]
+            )
+        );
+
+
+    const lastY =
+        top +
+        plotHeight *
+        (
+            maxValue -
+            boundedLast
+        ) /
+        (
+            maxValue -
+            minValue
+        );
+
+
+    context.beginPath();
+
+
+    context.fillStyle =
+        "#1570ef";
+
+
+    context.arc(
+        lastX,
+        lastY,
+        4,
+        0,
+        Math.PI *
+        2
     );
+
+
+    context.fill();
+
+
+    // --------------------------------------------------------
+    // Time axis
+    // --------------------------------------------------------
+
+    context.fillStyle =
+        "#667085";
+
+
+    context.font =
+        "11px Arial";
+
+
+    context.textAlign =
+        "center";
+
+
+    context.textBaseline =
+        "top";
+
+
+    const firstTime =
+        timestamps[
+            0
+        ];
+
+
+    const lastTime =
+        timestamps[
+            timestamps.length -
+            1
+        ];
+
+
+    context.fillText(
+        formatTime(
+            firstTime
+        ),
+        left,
+        top +
+        plotHeight +
+        10
+    );
+
+
+    context.fillText(
+        formatTime(
+            lastTime
+        ),
+        left +
+        plotWidth,
+        top +
+        plotHeight +
+        10
+    );
+
+
+    // --------------------------------------------------------
+    // Chart label
+    // --------------------------------------------------------
+
+    context.fillStyle =
+        "#344054";
+
+
+    context.font =
+        "12px Arial";
+
+
+    context.textAlign =
+        "left";
+
+
+    context.textBaseline =
+        "top";
+
+
+    context.fillText(
+        label,
+        left,
+        4
+    );
+}
+
+
+// ============================================================
+// Timestamp formatting
+// ============================================================
+
+function formatTime(
+    timestamp
+) {
+
+    const date =
+        new Date(
+            timestamp
+        );
+
+
+    return String(
+        date.getHours()
+    ).padStart(
+        2,
+        "0"
+    ) +
+    ":" +
+    String(
+        date.getMinutes()
+    ).padStart(
+        2,
+        "0"
+    ) +
+    ":" +
+    String(
+        date.getSeconds()
+    ).padStart(
+        2,
+        "0"
+    );
+}
+
+
+// ============================================================
+// Resize charts
+// ============================================================
+
+window.addEventListener(
+
+    "resize",
+
+    () => {
+
+        renderCharts();
+
+    }
+
+);
+
+
+// ============================================================
+// Initial load
+// ============================================================
+
+loadHosts();
+
+loadAlerts();
+
+
+// ============================================================
+// Refresh every 2 seconds
+// ============================================================
+
+setInterval(
+
+    loadHosts,
+
+    2000
+
+);
+
+setInterval(
+
+    loadAlerts,
+
+    2000
+
+);
+
+
 </script>
 
 
 </body>
+
 </html>
