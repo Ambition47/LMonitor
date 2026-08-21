@@ -62,50 +62,7 @@ LMonitor 由两个核心部分组成：
 
 # 2. 系统架构
 
-
-                Linux Host
-
-
-          +----------------+
-          | LMonitor Agent |
-          +-------+--------+
-                  |
-                  |
-             TCP Protocol
-                  |
-                  v
-
-
-    +--------------------------------+
-    |       Reactor TCP Server       |
-    |                                |
-    | epoll + EventLoop + Channel    |
-    +---------------+----------------+
-
-                    |
-      +-------------+-------------+
-      |                           |
-
-      v                           v
-+----------------+          +----------------+
-| Worker Thread  |          | Alert Manager  |
-| Pool           |          |                |
-+-------+--------+          +----------------+
-        |
-        |
-        v
-+----------------+
-| Metrics Store  |
-| History Store  |
-+-------+--------+
-        |
-        |
-        v
-+----------------+
-| HTTP Dashboard |
-+----------------+
-
-
+![LMonitor系统架构](docs/images/architecture.svg)
 
 ---
 

@@ -1,0 +1,231 @@
+<svg width="900" height="800"
+xmlns="http://www.w3.org/2000/svg">
+
+<style>
+
+.box {
+fill:white;
+stroke:black;
+stroke-width:2;
+rx:10;
+}
+
+.text {
+font-size:22px;
+font-family:Arial;
+text-anchor:middle;
+}
+
+.arrow {
+stroke:black;
+stroke-width:2;
+marker-end:url(#arrow);
+}
+
+</style>
+
+
+<defs>
+
+<marker id="arrow"
+markerWidth="10"
+markerHeight="10"
+refX="8"
+refY="3"
+orient="auto">
+
+<path d="M0,0 L0,6 L9,3 z"
+fill="black"/>
+
+</marker>
+
+</defs>
+
+
+
+<!-- Agent -->
+
+<rect class="box"
+x="300"
+y="40"
+width="300"
+height="70"/>
+
+<text class="text"
+x="450"
+y="85">
+
+LMonitor Agent
+
+</text>
+
+
+
+<!-- TCP -->
+
+<line class="arrow"
+x1="450"
+y1="110"
+x2="450"
+y2="180"/>
+
+
+<text class="text"
+x="450"
+y="150">
+
+TCP Protocol
+
+</text>
+
+
+
+<!-- Reactor -->
+
+<rect class="box"
+x="250"
+y="200"
+width="400"
+height="90"/>
+
+
+<text class="text"
+x="450"
+y="235">
+
+Reactor TCP Server
+
+</text>
+
+
+<text class="text"
+x="450"
+y="270">
+
+epoll + EventLoop
+
+</text>
+
+
+
+
+<!-- Worker -->
+
+<rect class="box"
+x="80"
+y="370"
+width="280"
+height="80"/>
+
+
+<text class="text"
+x="220"
+y="420">
+
+Worker Thread Pool
+
+</text>
+
+
+
+<!-- Alert -->
+
+<rect class="box"
+x="540"
+y="370"
+width="280"
+height="80"/>
+
+
+<text class="text"
+x="680"
+y="420">
+
+Alert Manager
+
+</text>
+
+
+
+
+<!-- arrows -->
+
+<line class="arrow"
+x1="350"
+y1="290"
+x2="220"
+y2="370"/>
+
+
+<line class="arrow"
+x1="550"
+y1="290"
+x2="680"
+y2="370"/>
+
+
+
+
+<!-- Store -->
+
+<rect class="box"
+x="300"
+y="520"
+width="300"
+height="80"/>
+
+
+<text class="text"
+x="450"
+y="570">
+
+Metrics Store
+
+</text>
+
+
+
+<line class="arrow"
+x1="220"
+y1="450"
+x2="400"
+y2="520"/>
+
+
+<line class="arrow"
+x1="680"
+y1="450"
+x2="500"
+y2="520"/>
+
+
+
+
+<!-- Dashboard -->
+
+<rect class="box"
+x="300"
+y="680"
+width="300"
+height="80"/>
+
+
+<text class="text"
+x="450"
+y="730">
+
+HTTP Dashboard
+
+</text>
+
+
+
+<line class="arrow"
+x1="450"
+y1="600"
+x2="450"
+y2="680"/>
+
+
+
+</svg>
