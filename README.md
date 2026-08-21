@@ -257,7 +257,7 @@ RECOVERED
 
 运行效果：
 
-> 后续添加 Dashboard 截图
+![LMonitor Dashboard](docs/images/dashboard.png)
 
 
 
