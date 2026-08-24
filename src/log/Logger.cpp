@@ -655,19 +655,42 @@ std::string Logger::detectLogFilePath() {
     // ~/LMonitor/logs/lmonitor_agent.log
     // --------------------------------------------------------
 
-    if (executableDirectory
-            .filename() ==
-        "build") {
+    if (executableDirectory.filename() == "build") {
 
-        projectDirectory =
-            executableDirectory
-                .parent_path();
+    // 开发环境:
+    // ~/LMonitor/build/lmonitor_agent
+    //
+    // 日志:
+    // ~/LMonitor/logs/
 
-    } else {
+    projectDirectory =
+        executableDirectory
+            .parent_path();
 
-        projectDirectory =
-            executableDirectory;
-    }
+}
+else if (
+    executableDirectory.filename() == "bin" &&
+    executableDirectory.parent_path().filename() == "lmonitor"
+)
+{
+
+    // 生产环境:
+    // /opt/lmonitor/bin/lmonitor_agent
+    //
+    // 日志:
+    // /opt/lmonitor/logs/
+
+    projectDirectory =
+        executableDirectory
+            .parent_path();
+
+}
+else {
+
+    projectDirectory =
+        executableDirectory;
+
+}
 
 
     const std::filesystem::path logDirectory =
