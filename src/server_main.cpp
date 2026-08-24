@@ -3,6 +3,7 @@
 #include "config/Config.h"
 #include "log/Logger.h"
 
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <string>
@@ -10,8 +11,10 @@
 
 int main()
 {
+
     try
     {
+
         // ====================================================
         // Load configuration
         // ====================================================
@@ -23,21 +26,24 @@ int main()
             "../config/lmonitor.conf";
 
 
-        if(!config.load(configFile))
+
+        if(
+            !config.load(
+                configFile
+            )
+        )
         {
+
             std::cerr
                 << "Failed to load configuration file: "
                 << configFile
                 << "\n";
 
+
             return 1;
         }
 
 
-
-        // ====================================================
-        // Initialize logger
-        // ====================================================
 
         Logger::instance().info(
             "LMonitor server starting..."
@@ -56,8 +62,16 @@ int main()
 
         const int tcpPort =
             config.getInt(
-                "tcp_port",
+                "server.tcp_port",
                 9000
+            );
+
+
+
+        const int httpPort =
+            config.getInt(
+                "server.http_port",
+                8080
             );
 
 
@@ -67,6 +81,15 @@ int main()
             +
             std::to_string(
                 tcpPort
+            )
+        );
+
+
+        Logger::instance().info(
+            "HTTP server port: "
+            +
+            std::to_string(
+                httpPort
             )
         );
 
@@ -96,6 +119,7 @@ int main()
         const std::exception& e
     )
     {
+
         Logger::instance().error(
             std::string(
                 "Server exception: "
@@ -112,6 +136,7 @@ int main()
 
 
         return 1;
+
     }
 
 

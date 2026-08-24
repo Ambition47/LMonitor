@@ -19,6 +19,7 @@ public:
     );
 
 
+
     void run();
 
 
@@ -26,6 +27,9 @@ public:
 private:
 
     uint16_t port_ = 0;
+
+
+    uint16_t httpPort_ = 8080;
 
 
     Config& config_;

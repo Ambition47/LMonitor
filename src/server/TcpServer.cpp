@@ -68,6 +68,7 @@ constexpr std::size_t MAX_WORKER_QUEUE_SIZE =
 // Constructor
 // ============================================================
 
+
 TcpServer::TcpServer(
     uint16_t port,
     Config& config
@@ -76,12 +77,20 @@ TcpServer::TcpServer(
     port_(
         port
     ),
+    httpPort_(
+        static_cast<uint16_t>(
+            config.getInt(
+                "server.http_port",
+                8080
+            )
+        )
+    ),
     config_(
         config
     )
 {
-}
 
+}
 
 
 // ============================================================
@@ -136,12 +145,7 @@ void TcpServer::run()
     // ========================================================
 
     HttpServer httpServer(
-    static_cast<uint16_t>(
-        config_.getInt(
-            "http_port",
-            8080
-        )
-    ),
+    httpPort_,
     metricsStore,
     historyStore,
     alertManager

@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 
+
 class Config
 {
 
@@ -41,12 +42,15 @@ public:
 
 private:
 
+
     std::unordered_map<
         std::string,
         std::string
     > values_;
 
+
 };
+
 
 
 #endif

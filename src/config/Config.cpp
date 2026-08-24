@@ -23,7 +23,14 @@ bool Config::load(
 
 
 
+    values_.clear();
+
+
+
     std::string line;
+
+
+    std::string currentSection;
 
 
 
@@ -35,6 +42,8 @@ bool Config::load(
     )
     {
 
+        // 去除空行
+
         if(
             line.empty()
         )
@@ -44,12 +53,38 @@ bool Config::load(
 
 
 
+        // 注释
+
         if(
             line[0] == '#'
         )
         {
             continue;
         }
+
+
+
+        // -------------------------------
+        // Section
+        // -------------------------------
+
+        if(
+            line.front() == '['
+            &&
+            line.back() == ']'
+        )
+        {
+
+            currentSection =
+                line.substr(
+                    1,
+                    line.size() - 2
+                );
+
+
+            continue;
+        }
+
 
 
 
@@ -81,14 +116,44 @@ bool Config::load(
 
 
 
-        values_[key] =
+        // -------------------------------
+        // Build full key
+        // -------------------------------
+
+        std::string fullKey;
+
+
+
+        if(
+            !currentSection.empty()
+        )
+        {
+            fullKey =
+                currentSection
+                +
+                "."
+                +
+                key;
+        }
+        else
+        {
+            fullKey =
+                key;
+        }
+
+
+
+        values_[fullKey] =
             value;
 
     }
 
 
+
     return true;
 }
+
+
 
 
 
@@ -114,8 +179,10 @@ std::string Config::get(
     }
 
 
+
     return iterator->second;
 }
+
 
 
 
@@ -139,6 +206,7 @@ int Config::getInt(
     {
         return defaultValue;
     }
+
 
 
     return std::stoi(
