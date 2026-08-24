@@ -1,6 +1,8 @@
 #include "alert/AlertEvaluator.h"
 
+
 #include <string>
+
 
 
 // ============================================================
@@ -8,37 +10,49 @@
 // ============================================================
 
 AlertEvaluator::AlertEvaluator()
+
     :
-    cpuWarningThreshold_(
-        80.0
-    ),
-    memoryWarningThreshold_(
-        85.0
-    ),
+
     diskCriticalThreshold_(
         90.0
-    ) {
+    )
+
+{
+
 }
+
+
+
 
 
 // ============================================================
 // Evaluate metrics
 // ============================================================
 
-std::vector<Alert> AlertEvaluator::evaluate(
-    const SystemMetrics& metrics
-) const {
+std::vector<Alert>
+AlertEvaluator::evaluate(
+    const SystemMetrics& metrics,
+    double cpuThreshold,
+    double memoryThreshold
+) const
+
+{
+
     std::vector<Alert> alerts;
+
 
 
     // ========================================================
     // CPU
     // ========================================================
 
-    if (
+    if(
         metrics.cpuUsagePercent >=
-        cpuWarningThreshold_
-    ) {
+        cpuThreshold
+    )
+
+    {
+
         Alert alert;
 
 
@@ -59,27 +73,35 @@ std::vector<Alert> AlertEvaluator::evaluate(
 
 
         alert.threshold =
-            cpuWarningThreshold_;
+            cpuThreshold;
 
 
         alert.message =
             "CPU usage exceeded warning threshold";
 
 
+
         alerts.push_back(
             alert
         );
+
     }
+
+
+
 
 
     // ========================================================
     // Memory
     // ========================================================
 
-    if (
+    if(
         metrics.memoryUsagePercent >=
-        memoryWarningThreshold_
-    ) {
+        memoryThreshold
+    )
+
+    {
+
         Alert alert;
 
 
@@ -100,27 +122,35 @@ std::vector<Alert> AlertEvaluator::evaluate(
 
 
         alert.threshold =
-            memoryWarningThreshold_;
+            memoryThreshold;
 
 
         alert.message =
             "Memory usage exceeded warning threshold";
 
 
+
         alerts.push_back(
             alert
         );
+
     }
+
+
+
 
 
     // ========================================================
     // Disk
     // ========================================================
 
-    if (
+    if(
         metrics.diskUsagePercent >=
         diskCriticalThreshold_
-    ) {
+    )
+
+    {
+
         Alert alert;
 
 
@@ -148,36 +178,58 @@ std::vector<Alert> AlertEvaluator::evaluate(
             "Disk usage exceeded critical threshold";
 
 
+
         alerts.push_back(
             alert
         );
+
     }
 
 
+
+
+
     return alerts;
+
 }
+
+
+
+
+
 
 
 // ============================================================
 // Level -> string
 // ============================================================
 
-const char* AlertEvaluator::levelToString(
+const char*
+AlertEvaluator::levelToString(
     AlertLevel level
-) noexcept {
-    switch (
+) noexcept
+
+{
+
+    switch(
         level
-    ) {
+    )
+
+    {
+
         case AlertLevel::Warning:
 
             return "WARNING";
 
 
+
         case AlertLevel::Critical:
 
             return "CRITICAL";
+
     }
 
 
+
     return "UNKNOWN";
+
 }

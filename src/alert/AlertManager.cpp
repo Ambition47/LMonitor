@@ -1,16 +1,38 @@
 #include "alert/AlertManager.h"
 
 
+#include "config/Config.h"
 #include "log/Logger.h"
 
 
 
-AlertManager::AlertManager()
+AlertManager::AlertManager(
+    Config& config
+)
 
     :
 
     fireDuration_(
-        std::chrono::seconds(5)
+        std::chrono::seconds(
+            config.getInt(
+                "fire_duration",
+                5
+            )
+        )
+    ),
+
+    cpuThreshold_(
+        config.getDouble(
+            "cpu_threshold",
+            80.0
+        )
+    ),
+
+    memoryThreshold_(
+        config.getDouble(
+            "memory_threshold",
+            90.0
+        )
     )
 
 {
@@ -21,10 +43,12 @@ AlertManager::AlertManager()
 
 
 
+
 std::string AlertManager::makeKey(
     const std::string& hostname,
     const std::string& metric
 ) const
+
 {
 
     return hostname
@@ -34,6 +58,8 @@ std::string AlertManager::makeKey(
         metric;
 
 }
+
+
 
 
 
@@ -65,7 +91,9 @@ AlertManager::update(
 
     auto rawAlerts =
         evaluator_.evaluate(
-            metrics
+            metrics,
+            cpuThreshold_,
+            memoryThreshold_
         );
 
 
@@ -78,9 +106,6 @@ AlertManager::update(
 
 
 
-    // ====================================================
-    // Process current alerts
-    // ====================================================
 
     for(
         const auto& alert :
@@ -97,6 +122,7 @@ AlertManager::update(
             );
 
 
+
         currentAlertKeys[key] =
             true;
 
@@ -108,10 +134,6 @@ AlertManager::update(
             );
 
 
-
-        // --------------------------------------------
-        // New alert
-        // --------------------------------------------
 
         if(
             iterator ==
@@ -167,9 +189,11 @@ AlertManager::update(
                 managed;
 
 
+
             continue;
 
         }
+
 
 
 
@@ -189,7 +213,9 @@ AlertManager::update(
 
 
 
+
         const auto duration =
+
             std::chrono::duration_cast<
                 std::chrono::seconds
             >(
@@ -200,14 +226,13 @@ AlertManager::update(
 
 
 
-        // --------------------------------------------
-        // Pending -> Firing
-        // Only trigger once
-        // --------------------------------------------
+
 
         if(
             duration >= fireDuration_
+
             &&
+
             managed.state !=
                 AlertState::Firing
         )
@@ -218,10 +243,10 @@ AlertManager::update(
                 AlertState::Firing;
 
 
+
             result.push_back(
                 managed
             );
-
 
         }
 
@@ -231,9 +256,8 @@ AlertManager::update(
 
 
 
-    // ====================================================
-    // Recover alerts
-    // ====================================================
+
+
 
     for(
         auto& item :
@@ -271,13 +295,21 @@ AlertManager::update(
 
 
                 Logger::instance().info(
+
                     "Alert resolved: "
+
                     +
+
                     alert.hostname
+
                     +
+
                     " "
+
                     +
+
                     alert.metric
+
                 );
 
             }
@@ -289,9 +321,12 @@ AlertManager::update(
 
 
 
+
     return result;
 
 }
+
+
 
 
 

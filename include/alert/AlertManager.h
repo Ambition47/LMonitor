@@ -14,13 +14,19 @@
 
 
 
+class Config;
+
+
+
 enum class AlertState
 {
+
     Normal,
 
     Pending,
 
     Firing
+
 };
 
 
@@ -70,7 +76,9 @@ class AlertManager
 public:
 
 
-    AlertManager();
+    explicit AlertManager(
+        Config& config
+    );
 
 
 
@@ -114,8 +122,13 @@ private:
 
     std::chrono::seconds fireDuration_;
 
-};
 
+    double cpuThreshold_ = 80.0;
+
+
+    double memoryThreshold_ = 90.0;
+
+};
 
 
 #endif

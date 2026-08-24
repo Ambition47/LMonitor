@@ -1,5 +1,7 @@
 #include "server/TcpServer.h"
 
+#include "config/Config.h"
+
 #include "alert/AlertManager.h"
 
 #include "http/HttpServer.h"
@@ -67,14 +69,17 @@ constexpr std::size_t MAX_WORKER_QUEUE_SIZE =
 // ============================================================
 
 TcpServer::TcpServer(
-    uint16_t port
+    uint16_t port,
+    Config& config
 )
     :
     port_(
         port
+    ),
+    config_(
+        config
     )
 {
-
 }
 
 
@@ -106,7 +111,9 @@ void TcpServer::run()
     MetricsHistoryStore historyStore(
     120
 );
-    AlertManager alertManager;
+    AlertManager alertManager(
+    config_
+);
 
 
 
@@ -129,11 +136,16 @@ void TcpServer::run()
     // ========================================================
 
     HttpServer httpServer(
-        8080,
-        metricsStore,
-	historyStore,
-	alertManager
-    );
+    static_cast<uint16_t>(
+        config_.getInt(
+            "http_port",
+            8080
+        )
+    ),
+    metricsStore,
+    historyStore,
+    alertManager
+);
 
 
     httpServer.start();
@@ -144,10 +156,25 @@ void TcpServer::run()
     // Worker Thread Pool
     // ========================================================
 
-    ThreadPool threadPool(
-        WORKER_THREAD_COUNT,
+    const int workerThreads =
+    config_.getInt(
+        "worker.threads",
+        WORKER_THREAD_COUNT
+    );
+
+
+const int workerQueueSize =
+    config_.getInt(
+        "worker.queue_size",
         MAX_WORKER_QUEUE_SIZE
     );
+
+
+
+ThreadPool threadPool(
+    workerThreads,
+    workerQueueSize
+);
 
 
 

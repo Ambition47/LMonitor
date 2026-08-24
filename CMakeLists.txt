@@ -51,7 +51,6 @@ add_library(
 target_include_directories(
     lmonitor_build_options
     INTERFACE
-
     ${PROJECT_SOURCE_DIR}/include
 )
 
@@ -59,7 +58,6 @@ target_include_directories(
 target_compile_options(
     lmonitor_build_options
     INTERFACE
-
     -Wall
     -Wextra
     -Wpedantic
@@ -75,28 +73,42 @@ add_library(
     lmonitor_common
     STATIC
 
-
     # Protocol
-
     src/protocol/FrameCodec.cpp
 
 
     # Serializer
-
     src/serializer/MetricsSerializer.cpp
-
     src/serializer/MetricsDeserializer.cpp
 
 
     # Logger
-
     src/log/Logger.cpp
 )
 
 
-
 target_link_libraries(
     lmonitor_common
+    PRIVATE
+    lmonitor_build_options
+)
+
+
+
+# ============================================================
+# Config Module
+# ============================================================
+
+add_library(
+    lmonitor_config
+    STATIC
+
+    src/config/Config.cpp
+)
+
+
+target_link_libraries(
+    lmonitor_config
     PRIVATE
 
     lmonitor_build_options
@@ -111,49 +123,40 @@ target_link_libraries(
 add_executable(
     lmonitor_agent
 
-
     src/main.cpp
 
 
     # Agent
-
     src/agent/MonitorAgent.cpp
 
 
     # Collector
-
     src/collector/CpuCollector.cpp
-
     src/collector/MemoryCollector.cpp
-
     src/collector/LoadCollector.cpp
-
     src/collector/SystemCollector.cpp
-
     src/collector/DiskCollector.cpp
-
     src/collector/NetworkCollector.cpp
-
     src/collector/ProcessCollector.cpp
 
 
     # Serializer
-
     src/serializer/MetricsSerializer.cpp
 
 
     # Network
-
     src/network/TcpClient.cpp
 )
 
 
-
 target_link_libraries(
     lmonitor_agent
+
     PRIVATE
 
     lmonitor_common
+
+    lmonitor_config
 
     lmonitor_build_options
 
@@ -169,63 +172,52 @@ target_link_libraries(
 add_executable(
     lmonitor_server
 
-
     # Main
-
     src/server_main.cpp
 
 
     # Server
-
     src/server/TcpServer.cpp
 
 
 
     # Reactor
-
     src/reactor/EventLoop.cpp
-
     src/reactor/Channel.cpp
-
     src/reactor/Acceptor.cpp
 
 
 
     # Network
-
     src/network/TcpConnection.cpp
 
 
 
     # Thread
-
     src/thread/ThreadPool.cpp
 
 
 
     # Store
-
     src/store/MetricsStore.cpp
     src/store/MetricsHistoryStore.cpp
-
     src/store/StateTracker.cpp
-    
-    # Alert
 
+
+
+    # Alert
     src/alert/AlertEvaluator.cpp
     src/alert/AlertManager.cpp
 
 
-    # Timer
 
+    # Timer
     src/timer/TimerFd.cpp
 
 
 
     # HTTP
-
     src/http/HttpResponse.cpp
-
     src/http/HttpServer.cpp
 )
 
@@ -233,14 +225,14 @@ add_executable(
 
 target_link_libraries(
     lmonitor_server
-    PRIVATE
 
+    PRIVATE
 
     lmonitor_common
 
+    lmonitor_config
 
     lmonitor_build_options
-
 
     Threads::Threads
 )

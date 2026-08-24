@@ -1,5 +1,7 @@
 #include "agent/MonitorAgent.h"
 
+#include "config/Config.h"
+
 #include <csignal>
 #include <iostream>
 #include <stdexcept>
@@ -52,7 +54,7 @@ int main(
     int argc,
     char* argv[]
 ) {
-     double intervalSeconds = 1.0;
+     double intervalSeconds = -1.0;
 
 for (int i = 1; i < argc; ++i) {
     const std::string argument =
@@ -99,6 +101,37 @@ for (int i = 1; i < argc; ++i) {
 }
 
 
+    Config config;
+
+
+if(
+    !config.load(
+        "config/lmonitor.conf"
+    )
+)
+
+{
+
+    std::cerr
+        << "Warning: Failed to load configuration file\n";
+
+}
+
+
+
+if(
+    intervalSeconds <= 0.0
+)
+
+{
+
+    intervalSeconds =
+        config.getDouble(
+            "sample_interval",
+            1.0
+        );
+
+}
 
     try {
         // 注册 SIGINT / SIGTERM
